@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
+import { useSearchParams } from 'next/navigation';
 import Modal from './Modal';
 
 type SchemaColumn = {
@@ -30,6 +31,25 @@ export default function SchemaInput() {
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [schemaColumns, setSchemaColumns] = useState<SchemaColumn[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isValidationModalOpen, setIsValidationModalOpen] = useState(false);
+  const [unselectedColumns, setUnselectedColumns] = useState<SchemaColumn[]>([]);
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const loadSchema = searchParams.get('load');
+    if (loadSchema) {
+      const savedSchemas = JSON.parse(localStorage.getItem('savedSchemas') || '{}');
+      const schema = savedSchemas[loadSchema];
+      if (schema) {
+        setSchemaText(schema.sql);
+        setSchemaColumns(schema.columns);
+        // Clear the URL parameter after loading
+        const url = new URL(window.location.href);
+        url.searchParams.delete('load');
+        window.history.replaceState({}, '', url);
+      }
+    }
+  }, [searchParams]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -111,10 +131,29 @@ export default function SchemaInput() {
     setSchemaColumns(columns);
   };
 
-  const handleSaveSchema = (schemaName: string) => {
-    // TODO: Implement schema saving logic
-    console.log('Saving schema with name:', schemaName);
+  const handleSaveSchema = (schemaName?: string) => {
+    if (!schemaName?.trim()) {
+      return;
+    }
+
+    // Get existing schemas from localStorage
+    const savedSchemas = JSON.parse(localStorage.getItem('savedSchemas') || '{}');
+    
+    // Save the new schema
+    savedSchemas[schemaName] = {
+      sql: schemaText,
+      timestamp: new Date().toISOString(),
+      columns: schemaColumns
+    };
+
+    // Save back to localStorage
+    localStorage.setItem('savedSchemas', JSON.stringify(savedSchemas));
+    
     setIsModalOpen(false);
+
+    // Dispatch a custom event to notify Navigation component
+    const event = new CustomEvent('schemasUpdated');
+    window.dispatchEvent(event);
   };
 
   const detectSQLFeatures = (sql: string) => {
@@ -260,6 +299,26 @@ export default function SchemaInput() {
     };
   };
 
+  const validateGenerators = () => {
+    const columnsWithoutGenerators = schemaColumns.filter(
+      column => !column.generator || column.generator === ''
+    );
+    
+    if (columnsWithoutGenerators.length > 0) {
+      setUnselectedColumns(columnsWithoutGenerators);
+      setIsValidationModalOpen(true);
+      return false;
+    }
+    return true;
+  };
+
+  const handleGenerateData = () => {
+    if (validateGenerators()) {
+      // TODO: Proceed with data generation
+      console.log('Generating data...');
+    }
+  };
+
   return (
     <div className="w-full">
       <div
@@ -380,7 +439,7 @@ export default function SchemaInput() {
                 Save Schema
               </button>
               <button
-                onClick={() => {/* TODO: Handle data generation */}}
+                onClick={handleGenerateData}
                 className="px-4 py-2 text-sm text-white bg-blue-500 hover:bg-blue-600 rounded-md transition-colors"
               >
                 Generate Data
@@ -461,6 +520,28 @@ export default function SchemaInput() {
         inputLabel="Schema Name"
         confirmText="Save"
       />
+
+      <Modal
+        isOpen={isValidationModalOpen}
+        onClose={() => setIsValidationModalOpen(false)}
+        title="Missing Generator Selections"
+        confirmText="OK"
+        onConfirm={() => setIsValidationModalOpen(false)}
+        hideInput
+      >
+        <div className="text-sm text-gray-600 dark:text-gray-300">
+          <p className="mb-3">Please select generators for the following columns:</p>
+          <ul className="list-disc pl-5 space-y-1">
+            {unselectedColumns.map((column, index) => (
+              <li key={index}>
+                <span className="font-medium">{column.tableName}</span>
+                .
+                <span className="font-medium">{column.columnName}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Modal>
     </div>
   );
 } 

@@ -187,5 +187,239 @@ describe('SchemaInput', () => {
     });
   });
 
-  // ... rest of the existing tests ...
+  describe('Generator Validation', () => {
+    it('should show validation modal when generators are not selected', async () => {
+      const sqlContent = 'CREATE TABLE test (id INT, name VARCHAR(50));';
+      
+      render(<SchemaInput />);
+      const textarea = screen.getByPlaceholderText(/paste your schema/i);
+      
+      // Add schema and process it
+      fireEvent.change(textarea, { target: { value: sqlContent } });
+      const processButton = screen.getByText(/process schema/i);
+      fireEvent.click(processButton);
+
+      // Try to generate data without selecting generators
+      const generateButton = screen.getByText(/generate data/i);
+      fireEvent.click(generateButton);
+
+      // Check if validation modal is shown with correct content
+      await waitFor(() => {
+        expect(screen.getByText(/Missing Generator Selections/i)).toBeInTheDocument();
+        expect(screen.getByText(/Please select generators for the following columns/i)).toBeInTheDocument();
+        expect(screen.getByText(/test\.id/i)).toBeInTheDocument();
+        expect(screen.getByText(/test\.name/i)).toBeInTheDocument();
+      });
+    });
+
+    it('should not show validation modal when all generators are selected', async () => {
+      const sqlContent = 'CREATE TABLE test (id INT, name VARCHAR(50));';
+      
+      render(<SchemaInput />);
+      const textarea = screen.getByPlaceholderText(/paste your schema/i);
+      
+      // Add schema and process it
+      fireEvent.change(textarea, { target: { value: sqlContent } });
+      const processButton = screen.getByText(/process schema/i);
+      fireEvent.click(processButton);
+
+      // Select generators for all columns
+      const generatorSelects = screen.getAllByRole('combobox');
+      fireEvent.change(generatorSelects[0], { target: { value: 'sequence' } });
+      fireEvent.change(generatorSelects[1], { target: { value: 'faker' } });
+
+      // Try to generate data
+      const generateButton = screen.getByText(/generate data/i);
+      fireEvent.click(generateButton);
+
+      // Check that validation modal is not shown
+      expect(screen.queryByText(/Missing Generator Selections/i)).not.toBeInTheDocument();
+    });
+
+    it('should close validation modal when OK is clicked', async () => {
+      const sqlContent = 'CREATE TABLE test (id INT);';
+      
+      render(<SchemaInput />);
+      const textarea = screen.getByPlaceholderText(/paste your schema/i);
+      
+      // Add schema and process it
+      fireEvent.change(textarea, { target: { value: sqlContent } });
+      const processButton = screen.getByText(/process schema/i);
+      fireEvent.click(processButton);
+
+      // Try to generate data without selecting generator
+      const generateButton = screen.getByText(/generate data/i);
+      fireEvent.click(generateButton);
+
+      // Wait for modal and click OK
+      await waitFor(() => {
+        const okButton = screen.getByText(/^OK$/);
+        fireEvent.click(okButton);
+      });
+
+      // Check that modal is closed
+      expect(screen.queryByText(/Missing Generator Selections/i)).not.toBeInTheDocument();
+    });
+
+    it('should list only columns without generators in validation modal', async () => {
+      const sqlContent = 'CREATE TABLE test (id INT, name VARCHAR(50), age INT);';
+      
+      render(<SchemaInput />);
+      const textarea = screen.getByPlaceholderText(/paste your schema/i);
+      
+      // Add schema and process it
+      fireEvent.change(textarea, { target: { value: sqlContent } });
+      const processButton = screen.getByText(/process schema/i);
+      fireEvent.click(processButton);
+
+      // Select generator for only one column
+      const generatorSelects = screen.getAllByRole('combobox');
+      fireEvent.change(generatorSelects[1], { target: { value: 'faker' } }); // Select for 'name'
+
+      // Try to generate data
+      const generateButton = screen.getByText(/generate data/i);
+      fireEvent.click(generateButton);
+
+      // Check that only columns without generators are listed
+      await waitFor(() => {
+        expect(screen.getByText(/test\.id/i)).toBeInTheDocument();
+        expect(screen.getByText(/test\.age/i)).toBeInTheDocument();
+        expect(screen.queryByText(/test\.name/i)).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Schema Saving', () => {
+    beforeEach(() => {
+      localStorage.clear();
+      // Clear any mocks
+      jest.clearAllMocks();
+    });
+
+    it('should save schema to localStorage when save button is clicked', async () => {
+      const sqlContent = 'CREATE TABLE test (id INT, name VARCHAR(50));';
+      const schemaName = 'Test Schema';
+      
+      render(<SchemaInput />);
+      const textarea = screen.getByPlaceholderText(/paste your schema/i);
+      
+      // Add schema and process it
+      fireEvent.change(textarea, { target: { value: sqlContent } });
+      const processButton = screen.getByText(/process schema/i);
+      fireEvent.click(processButton);
+
+      // Click save button and enter schema name
+      const saveButton = screen.getByText(/save schema/i);
+      fireEvent.click(saveButton);
+
+      // Wait for modal and enter schema name
+      await waitFor(() => {
+        const input = screen.getByRole('textbox');
+        fireEvent.change(input, { target: { value: schemaName } });
+        const modalSaveButton = screen.getByText(/^Save$/);
+        fireEvent.click(modalSaveButton);
+      });
+
+      // Check localStorage
+      const savedSchemas = JSON.parse(localStorage.getItem('savedSchemas') || '{}');
+      expect(savedSchemas[schemaName]).toBeDefined();
+      expect(savedSchemas[schemaName].sql).toBe(sqlContent);
+      expect(savedSchemas[schemaName].columns).toHaveLength(2);
+    });
+
+    it('should not save schema if name is empty', async () => {
+      const sqlContent = 'CREATE TABLE test (id INT);';
+      
+      render(<SchemaInput />);
+      const textarea = screen.getByPlaceholderText(/paste your schema/i);
+      
+      // Add schema and process it
+      fireEvent.change(textarea, { target: { value: sqlContent } });
+      const processButton = screen.getByText(/process schema/i);
+      fireEvent.click(processButton);
+
+      // Click save button without entering name
+      const saveButton = screen.getByText(/save schema/i);
+      fireEvent.click(saveButton);
+
+      await waitFor(() => {
+        const modalSaveButton = screen.getByText(/^Save$/);
+        fireEvent.click(modalSaveButton);
+      });
+
+      // Check localStorage is empty
+      const savedSchemas = JSON.parse(localStorage.getItem('savedSchemas') || '{}');
+      expect(Object.keys(savedSchemas)).toHaveLength(0);
+    });
+
+    it('should dispatch schemasUpdated event when schema is saved', async () => {
+      const sqlContent = 'CREATE TABLE test (id INT);';
+      const schemaName = 'Test Schema';
+      const eventListener = jest.fn();
+      
+      window.addEventListener('schemasUpdated', eventListener);
+      
+      render(<SchemaInput />);
+      const textarea = screen.getByPlaceholderText(/paste your schema/i);
+      
+      // Add schema and process it
+      fireEvent.change(textarea, { target: { value: sqlContent } });
+      const processButton = screen.getByText(/process schema/i);
+      fireEvent.click(processButton);
+
+      // Click save button and enter schema name
+      const saveButton = screen.getByText(/save schema/i);
+      fireEvent.click(saveButton);
+
+      await waitFor(() => {
+        const input = screen.getByRole('textbox');
+        fireEvent.change(input, { target: { value: schemaName } });
+        const modalSaveButton = screen.getByText(/^Save$/);
+        fireEvent.click(modalSaveButton);
+      });
+
+      expect(eventListener).toHaveBeenCalled();
+      
+      window.removeEventListener('schemasUpdated', eventListener);
+    });
+
+    it('should update existing schema if name already exists', async () => {
+      const initialSQL = 'CREATE TABLE test (id INT);';
+      const updatedSQL = 'CREATE TABLE test (id INT, name VARCHAR(50));';
+      const schemaName = 'Test Schema';
+      
+      // Save initial schema
+      localStorage.setItem('savedSchemas', JSON.stringify({
+        [schemaName]: {
+          sql: initialSQL,
+          timestamp: new Date().toISOString(),
+          columns: [{ tableName: 'test', columnName: 'id', dataType: 'INT' }]
+        }
+      }));
+      
+      render(<SchemaInput />);
+      const textarea = screen.getByPlaceholderText(/paste your schema/i);
+      
+      // Add updated schema and process it
+      fireEvent.change(textarea, { target: { value: updatedSQL } });
+      const processButton = screen.getByText(/process schema/i);
+      fireEvent.click(processButton);
+
+      // Save with same name
+      const saveButton = screen.getByText(/save schema/i);
+      fireEvent.click(saveButton);
+
+      await waitFor(() => {
+        const input = screen.getByRole('textbox');
+        fireEvent.change(input, { target: { value: schemaName } });
+        const modalSaveButton = screen.getByText(/^Save$/);
+        fireEvent.click(modalSaveButton);
+      });
+
+      // Check localStorage has updated schema
+      const savedSchemas = JSON.parse(localStorage.getItem('savedSchemas') || '{}');
+      expect(savedSchemas[schemaName].sql).toBe(updatedSQL);
+      expect(savedSchemas[schemaName].columns).toHaveLength(2);
+    });
+  });
 }); 
