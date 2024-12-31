@@ -11,10 +11,7 @@ export default function Navigation() {
       case '/schema':
         return {
           title: 'Schema Commands',
-          commands: [
-            { href: '#input', label: 'Input Schema' },
-            { href: '#validate', label: 'Validate Schema' },
-          ]
+          commands: []
         };
       case '/generate':
         return {
@@ -50,7 +47,7 @@ export default function Navigation() {
           </Link>
         </li>
 
-        {pageCommands && (
+        {pageCommands && pageCommands.commands.length > 0 && (
           <li className="pt-6 mt-2 border-t border-gray-200 dark:border-gray-700">
             <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100">
               {pageCommands.title}
