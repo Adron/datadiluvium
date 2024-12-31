@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, Suspense } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useSearchParams } from 'next/navigation';
 import Modal from './Modal';
@@ -26,7 +26,7 @@ type ValidationResult = {
   dialects: SQLDialect[];
 };
 
-export default function SchemaInput() {
+function SchemaInputContent() {
   const [schemaText, setSchemaText] = useState('');
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [schemaColumns, setSchemaColumns] = useState<SchemaColumn[]>([]);
@@ -543,5 +543,13 @@ export default function SchemaInput() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+export default function SchemaInput() {
+  return (
+    <Suspense fallback={<div>Loading schema editor...</div>}>
+      <SchemaInputContent />
+    </Suspense>
   );
 } 

@@ -4,10 +4,18 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+type SchemaColumn = {
+  tableName: string;
+  columnName: string;
+  dataType: string;
+  defaultValue: string | null;
+  generator?: string;
+};
+
 type SavedSchema = {
   sql: string;
   timestamp: string;
-  columns: any[];
+  columns: SchemaColumn[];
 };
 
 type SavedSchemas = {

@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Navigation from "../components/Navigation";
 import SchemaInput from "../components/SchemaInput";
 
@@ -13,7 +14,9 @@ export default function SchemaPage() {
             and establish relationships that will be used in the generation process.
           </p>
           
-          <SchemaInput />
+          <Suspense fallback={<div>Loading...</div>}>
+            <SchemaInput />
+          </Suspense>
         </div>
       </div>
     </>
