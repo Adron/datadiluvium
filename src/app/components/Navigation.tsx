@@ -12,9 +12,7 @@ export default function Navigation() {
         return {
           title: 'Schema Commands',
           commands: [
-            { href: '#save', label: 'Save Schema' },
-            { href: '#validate', label: 'Validate Schema' },
-            { href: '#export', label: 'Export Schema' }
+            { href: '#command here', label: 'Save Schema' }
           ]
         };
       case '/generate':

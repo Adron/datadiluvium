@@ -43,6 +43,9 @@ export default function SchemaInput() {
           setSchemaColumns([]);
         }
       };
+      reader.onerror = (error) => {
+        console.error('Error reading file:', error);
+      };
       reader.readAsText(file);
     }
   }, []);
@@ -266,7 +269,6 @@ export default function SchemaInput() {
             ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
             : 'border-gray-300 dark:border-gray-600'
         }`}
-        onClick={(e) => e.stopPropagation()}
       >
         <input {...getInputProps()} />
         
