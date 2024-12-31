@@ -1,4 +1,5 @@
 import Navigation from "../components/Navigation";
+import SchemaInput from "../components/SchemaInput";
 
 export default function SchemaPage() {
   return (
@@ -12,12 +13,7 @@ export default function SchemaPage() {
             and establish relationships that will be used in the generation process.
           </p>
           
-          {/* Placeholder for schema input interface */}
-          <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-8 border border-gray-200 dark:border-gray-800">
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Schema input interface will be implemented here
-            </p>
-          </div>
+          <SchemaInput />
         </div>
       </div>
     </>
