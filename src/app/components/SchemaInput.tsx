@@ -27,7 +27,6 @@ type ValidationResult = {
 
 export default function SchemaInput() {
   const [schemaText, setSchemaText] = useState('');
-  const [isDragging, setIsDragging] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [schemaColumns, setSchemaColumns] = useState<SchemaColumn[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -48,12 +47,15 @@ export default function SchemaInput() {
     }
   }, []);
 
-  const { getRootProps, getInputProps } = useDropzone({
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'text/*': ['.txt', '.json', '.yaml', '.yml', '.xml', '.csv', '.sql'],
+      'text/plain': ['.sql'],
+      'application/sql': ['.sql']
     },
     multiple: false,
+    noClick: false,
+    preventDropOnDocument: true
   });
 
   const processSchema = () => {
@@ -260,13 +262,11 @@ export default function SchemaInput() {
       <div
         {...getRootProps()}
         className={`relative border-2 border-dashed rounded-lg p-4 transition-colors ${
-          isDragging
+          isDragActive
             ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
             : 'border-gray-300 dark:border-gray-600'
         }`}
-        onDragEnter={() => setIsDragging(true)}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={() => setIsDragging(false)}
+        onClick={(e) => e.stopPropagation()}
       >
         <input {...getInputProps()} />
         
