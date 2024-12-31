@@ -2,12 +2,14 @@
 
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
+import Modal from './Modal';
 
 type SchemaColumn = {
   tableName: string;
   columnName: string;
   dataType: string;
   defaultValue: string | null;
+  generator?: string;
 };
 
 type SQLDialect = {
@@ -28,6 +30,7 @@ export default function SchemaInput() {
   const [isDragging, setIsDragging] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [schemaColumns, setSchemaColumns] = useState<SchemaColumn[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -101,6 +104,155 @@ export default function SchemaInput() {
     });
 
     setSchemaColumns(columns);
+  };
+
+  const handleSaveSchema = (schemaName: string) => {
+    // TODO: Implement schema saving logic
+    console.log('Saving schema with name:', schemaName);
+    setIsModalOpen(false);
+  };
+
+  const detectSQLFeatures = (sql: string) => {
+    const features: Record<string, string[]> = {
+      'T-SQL': [
+        'DECLARE @',
+        'EXEC ',
+        'EXECUTE ',
+        'IDENTITY(',
+        'NVARCHAR',
+        'TOP ',
+        'MERGE',
+        'OUTPUT',
+        'CROSS APPLY',
+        'OUTER APPLY',
+        'NOLOCK',
+        'ROWGUIDCOL',
+        'UNIQUEIDENTIFIER',
+        'DATETIME2',
+        'DATETIMEOFFSET',
+      ],
+      'PL/SQL': [
+        'BEGIN',
+        'END;',
+        'DECLARE',
+        'PACKAGE',
+        'VARCHAR2',
+        'NUMBER(',
+        'CLOB',
+        'NCLOB',
+        'BINARY_INTEGER',
+        'EXCEPTION',
+        'RAISE',
+        'ROWTYPE',
+      ],
+      'PostgreSQL': [
+        'SERIAL',
+        'TEXT',
+        'RETURNING',
+        'CREATE EXTENSION',
+        'USING INDEX TABLESPACE',
+        'BYTEA',
+        'UUID',
+        'JSONB',
+        'WITH OIDS',
+        'TABLESPACE',
+        'CONCURRENTLY',
+        'MATERIALIZED VIEW',
+        'USING GIST',
+        'USING GIN',
+      ],
+      'MySQL': [
+        'ENGINE=',
+        'AUTO_INCREMENT',
+        'UNSIGNED',
+        'SHOW ',
+        'TINYINT',
+        'MEDIUMINT',
+        'LONGTEXT',
+        'ENUM',
+        'SPATIAL',
+        'FULLTEXT',
+      ],
+      'SQLite': [
+        'AUTOINCREMENT',
+        'PRAGMA',
+        'VACUUM',
+        'WITHOUT ROWID',
+        'STRICT',
+        'DEFERRABLE',
+      ],
+      'Oracle': [
+        'VARCHAR2',
+        'NUMBER(',
+        'ROWNUM',
+        'CONNECT BY',
+        'MINUS',
+        'LONG RAW',
+        'BFILE',
+        'ROWID',
+        'UROWID',
+      ],
+    };
+
+    const results: SQLDialect[] = [];
+    
+    // Basic SQL validation checks
+    const hasCreateTable = /CREATE\s+TABLE/i.test(sql);
+    const hasAlterTable = /ALTER\s+TABLE/i.test(sql);
+    const hasSelect = /SELECT\s+.*\s+FROM/i.test(sql);
+    const hasInsert = /INSERT\s+INTO/i.test(sql);
+    const hasValidParentheses = (str: string) => {
+      let count = 0;
+      for (const char of str) {
+        if (char === '(') count++;
+        if (char === ')') count--;
+        if (count < 0) return false;
+      }
+      return count === 0;
+    };
+
+    const isBasicallyValidSQL = 
+      (hasCreateTable || hasAlterTable || hasSelect || hasInsert) &&
+      hasValidParentheses(sql) &&
+      !sql.includes(';;') && // No double semicolons
+      /[A-Za-z_][A-Za-z0-9_]*/.test(sql); // Contains valid identifiers
+
+    if (!isBasicallyValidSQL) {
+      return {
+        isValid: false,
+        error: 'Invalid SQL syntax: Missing basic SQL structure or invalid syntax',
+        dialects: []
+      };
+    }
+
+    // Check for dialect-specific features
+    for (const [dialect, dialectFeatures] of Object.entries(features)) {
+      const foundFeatures = dialectFeatures.filter(feature => 
+        sql.toUpperCase().includes(feature.toUpperCase())
+      );
+      
+      if (foundFeatures.length > 0) {
+        results.push({
+          name: dialect,
+          isValid: true,
+          confidence: (foundFeatures.length / dialectFeatures.length) * 100,
+          features: foundFeatures
+        });
+      }
+    }
+
+    // Always include ANSI SQL if basic validation passes
+    results.unshift({
+      name: 'ANSI SQL',
+      isValid: true,
+      confidence: 100,
+      features: ['Standard SQL syntax']
+    });
+
+    return {
+      isValid: true,
+      dialects: results.sort((a, b) => b.confidence - a.confidence)
+    };
   };
 
   return (
@@ -195,12 +347,23 @@ export default function SchemaInput() {
             Clear
           </button>
           {schemaText && (
-            <button
-              onClick={processSchema}
-              className="px-4 py-2 text-sm text-white bg-blue-500 hover:bg-blue-600 rounded-md transition-colors"
-            >
-              Process Schema
-            </button>
+            <>
+              <button
+                onClick={() => {
+                  const validationResult = detectSQLFeatures(schemaText);
+                  setValidationResult(validationResult);
+                }}
+                className="px-4 py-2 text-sm text-white bg-green-500 hover:bg-green-600 rounded-md transition-colors"
+              >
+                Validate
+              </button>
+              <button
+                onClick={processSchema}
+                className="px-4 py-2 text-sm text-white bg-blue-500 hover:bg-blue-600 rounded-md transition-colors"
+              >
+                Process Schema
+              </button>
+            </>
           )}
         </div>
 
@@ -209,7 +372,7 @@ export default function SchemaInput() {
             <div className="w-px h-8 bg-gray-200 dark:bg-gray-700 mx-4" />
             <div className="flex gap-4">
               <button
-                onClick={() => {/* TODO: Handle schema saving */}}
+                onClick={() => setIsModalOpen(true)}
                 className="px-4 py-2 text-sm text-white bg-green-500 hover:bg-green-600 rounded-md transition-colors"
               >
                 Save Schema
@@ -243,6 +406,9 @@ export default function SchemaInput() {
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Default Value
                   </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Generator
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
@@ -260,6 +426,23 @@ export default function SchemaInput() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                       {column.defaultValue || '-'}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                      <select 
+                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
+                        value={column.generator || ''}
+                        onChange={(e) => {
+                          const newColumns = [...schemaColumns];
+                          newColumns[index] = { ...column, generator: e.target.value };
+                          setSchemaColumns(newColumns);
+                        }}
+                      >
+                        <option value="">Generation Option</option>
+                        <option value="random">Random</option>
+                        <option value="sequence">Sequence</option>
+                        <option value="faker">Faker</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -267,6 +450,15 @@ export default function SchemaInput() {
           </div>
         </div>
       )}
+
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onConfirm={handleSaveSchema}
+        title="Save Schema"
+        inputLabel="Schema Name"
+        confirmText="Save"
+      />
     </div>
   );
 } 

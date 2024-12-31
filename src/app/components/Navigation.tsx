@@ -11,7 +11,11 @@ export default function Navigation() {
       case '/schema':
         return {
           title: 'Schema Commands',
-          commands: []
+          commands: [
+            { href: '#save', label: 'Save Schema' },
+            { href: '#validate', label: 'Validate Schema' },
+            { href: '#export', label: 'Export Schema' }
+          ]
         };
       case '/generate':
         return {
