@@ -30,7 +30,7 @@ export const firstNameGenerator: GeneratorConfig = {
   generate: async (count: number, options?: GeneratorOptions) => {
     const finalOptions = { ...firstNameGenerator.defaultOptions, ...options };
     return Array.from({ length: count }, () => {
-      let name = finalOptions.gender ? 
+      const name = finalOptions.gender ? 
         faker.person.firstName(finalOptions.gender as 'male' | 'female') :
         faker.person.firstName();
       

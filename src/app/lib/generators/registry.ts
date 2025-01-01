@@ -1,4 +1,4 @@
-import { GeneratorConfig, GeneratorRegistry } from './types';
+import { GeneratorConfig } from './types';
 import { 
   uuidGenerator, 
   firstNameGenerator, 
@@ -16,98 +16,47 @@ import {
   booleanGenerator
 } from './basic';
 
-class DataGeneratorRegistry {
-  private generators: GeneratorRegistry = {};
+export class DataGeneratorRegistry {
+  private generators: GeneratorConfig[] = [];
 
   constructor() {
-    // Register built-in generators with consistent keys (lowercase, no spaces)
-    this.register('uuid', uuidGenerator);
-    this.register('firstname', firstNameGenerator);
-    this.register('lastname', lastNameGenerator);
-    this.register('email', emailGenerator);
-    this.register('timestamp', timestampGenerator);
-    this.register('sequentialnumber', sequentialNumberGenerator);
-    this.register('money', moneyGenerator);
-    this.register('phonenumber', phoneNumberGenerator);
-    this.register('company', companyGenerator);
-    this.register('address', addressGenerator);
-    this.register('username', usernameGenerator);
-    this.register('password', passwordGenerator);
-    this.register('productcode', productCodeGenerator);
-    this.register('boolean', booleanGenerator);
+    // Register built-in generators
+    this.register(uuidGenerator);
+    this.register(firstNameGenerator);
+    this.register(lastNameGenerator);
+    this.register(emailGenerator);
+    this.register(timestampGenerator);
+    this.register(sequentialNumberGenerator);
+    this.register(moneyGenerator);
+    this.register(phoneNumberGenerator);
+    this.register(companyGenerator);
+    this.register(addressGenerator);
+    this.register(usernameGenerator);
+    this.register(passwordGenerator);
+    this.register(productCodeGenerator);
+    this.register(booleanGenerator);
   }
 
-  register(key: string, generator: GeneratorConfig) {
-    this.generators[key] = generator;
+  register(generator: GeneratorConfig): void {
+    this.generators.push(generator);
   }
 
-  get(key: string): GeneratorConfig | undefined {
-    return this.generators[key];
+  get(name: string): GeneratorConfig | undefined {
+    return this.generators.find(g => g.name.toLowerCase() === name.toLowerCase());
   }
 
-  getAll(): GeneratorRegistry {
-    return this.generators;
+  private normalizeDataType(dataType: string): string {
+    return dataType.toUpperCase().trim().split('(')[0];
   }
 
-  getCompatibleGenerators(sqlType: string): GeneratorConfig[] {
-    const normalizedType = sqlType.toUpperCase().trim();
-    console.log(`Finding generators for SQL type: ${normalizedType}`);
-    
-    // Extract base type without size/precision
-    const baseType = normalizedType.split('(')[0].trim();
-    console.log(`Base type: ${baseType}`);
-    
-    // Get compatible generators
-    const compatibleGens = Object.values(this.generators).filter(generator => {
-      const isCompatible = generator.compatibleTypes.some(type => {
-        const compatType = type.toUpperCase().trim();
-        
-        // Handle exact matches
-        if (compatType === normalizedType) {
-          console.log(`Exact match found for ${generator.name} with type ${compatType}`);
-          return true;
-        }
-        
-        // Handle base type matches
-        if (compatType === baseType) {
-          console.log(`Base type match found for ${generator.name} with type ${compatType}`);
-          return true;
-        }
-        
-        // Handle parameterized types
-        const compatBaseType = compatType.split('(')[0].trim();
-        if (compatBaseType === baseType) {
-          console.log(`Parameterized type match found for ${generator.name} with type ${compatType}`);
-          return true;
-        }
-        
-        return false;
-      });
-
-      if (isCompatible) {
-        console.log(`Generator '${generator.name}' is compatible with ${normalizedType}`);
-      }
-      return isCompatible;
-    });
-
-    // If no compatible generators found, return all generators
-    if (compatibleGens.length === 0) {
-      console.log(`No specific compatible generators found for ${normalizedType}, returning all generators`);
-      return Object.values(this.generators);
-    }
-
-    console.log(`Found ${compatibleGens.length} compatible generators for ${normalizedType}`);
-    return compatibleGens;
-  }
-
-  async generate(key: string, count: number): Promise<any[]> {
-    const generator = this.get(key);
-    if (!generator) {
-      throw new Error(`Generator '${key}' not found`);
-    }
-    return generator.generate(count);
+  getCompatibleGenerators(dataType: string): GeneratorConfig[] {
+    const normalizedType = this.normalizeDataType(dataType);
+    return this.generators.filter(generator => 
+      generator.compatibleTypes.some(type => 
+        this.normalizeDataType(type) === normalizedType
+      )
+    );
   }
 }
 
-// Export a singleton instance
 export const generatorRegistry = new DataGeneratorRegistry(); 

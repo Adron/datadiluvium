@@ -53,7 +53,6 @@ function SchemaInputContent() {
   const ROWS_PER_PAGE = 10;
   const searchParams = useSearchParams();
   const [isFormatModalOpen, setIsFormatModalOpen] = useState(false);
-  const [selectedFormat, setSelectedFormat] = useState<'json' | 'csv' | 'xml' | null>(null);
 
   useEffect(() => {
     const loadSchema = searchParams.get('load');
@@ -360,7 +359,6 @@ function SchemaInputContent() {
 
   const handleFormatSelection = async (format: 'json' | 'csv' | 'xml') => {
     setIsFormatModalOpen(false);
-    setSelectedFormat(format);
     await generateAndExportData(format);
   };
 
