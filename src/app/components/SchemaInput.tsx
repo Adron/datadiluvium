@@ -32,6 +32,8 @@ function SchemaInputContent() {
   const [schemaColumns, setSchemaColumns] = useState<SchemaColumn[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isValidationModalOpen, setIsValidationModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [columnToDelete, setColumnToDelete] = useState<{index: number, column: SchemaColumn} | null>(null);
   const [unselectedColumns, setUnselectedColumns] = useState<SchemaColumn[]>([]);
   const searchParams = useSearchParams();
 
@@ -319,6 +321,54 @@ function SchemaInputContent() {
     }
   };
 
+  const handleDeleteColumn = (index: number, column: SchemaColumn) => {
+    setColumnToDelete({ index, column });
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (columnToDelete !== null) {
+      // Remove column from schemaColumns array
+      const newColumns = [...schemaColumns];
+      newColumns.splice(columnToDelete.index, 1);
+      setSchemaColumns(newColumns);
+
+      // Update SQL text by removing the column
+      const { column } = columnToDelete;
+      const tables = schemaText.split(/create\s+table\s+/gi);
+      const updatedTables = tables.map((tableDefinition, index) => {
+        if (index === 0) return tableDefinition; // Skip the first split result
+
+        // Find the table that contains our column
+        const tableNameMatch = tableDefinition.match(/[\[\`"]?(\w+)[\]\`"]?\s*\(/i);
+        if (!tableNameMatch || tableNameMatch[1] !== column.tableName) {
+          return 'CREATE TABLE ' + tableDefinition;
+        }
+
+        // Parse the columns
+        const openParenIndex = tableDefinition.indexOf('(');
+        const closeParenIndex = tableDefinition.lastIndexOf(')');
+        const tableName = tableDefinition.slice(0, openParenIndex);
+        const columnsText = tableDefinition.slice(openParenIndex + 1, closeParenIndex);
+        const afterColumns = tableDefinition.slice(closeParenIndex);
+
+        // Split columns and remove the target column
+        const columns = columnsText.split(',').map(col => col.trim());
+        const updatedColumns = columns.filter(col => {
+          const colName = col.split(/\s+/)[0].replace(/[\[\]"`]/g, '');
+          return colName.toLowerCase() !== column.columnName.toLowerCase();
+        });
+
+        // Reconstruct the CREATE TABLE statement
+        return 'CREATE TABLE ' + tableName + '(\n  ' + updatedColumns.join(',\n  ') + afterColumns;
+      });
+
+      setSchemaText(updatedTables.join(''));
+      setIsDeleteModalOpen(false);
+      setColumnToDelete(null);
+    }
+  };
+
   return (
     <div className="w-full">
       <div
@@ -488,21 +538,29 @@ function SchemaInputContent() {
                       {column.defaultValue || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      <select 
-                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
-                        value={column.generator || ''}
-                        onChange={(e) => {
-                          const newColumns = [...schemaColumns];
-                          newColumns[index] = { ...column, generator: e.target.value };
-                          setSchemaColumns(newColumns);
-                        }}
-                      >
-                        <option value="">Generation Option</option>
-                        <option value="random">Random</option>
-                        <option value="sequence">Sequence</option>
-                        <option value="faker">Faker</option>
-                        <option value="custom">Custom</option>
-                      </select>
+                      <div className="flex items-center gap-2">
+                        <select 
+                          className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
+                          value={column.generator || ''}
+                          onChange={(e) => {
+                            const newColumns = [...schemaColumns];
+                            newColumns[index] = { ...column, generator: e.target.value };
+                            setSchemaColumns(newColumns);
+                          }}
+                        >
+                          <option value="">Generation Option</option>
+                          <option value="random">Random</option>
+                          <option value="sequence">Sequence</option>
+                          <option value="faker">Faker</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                        <button
+                          className="px-2 py-1 text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                          onClick={() => handleDeleteColumn(index, column)}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -540,6 +598,29 @@ function SchemaInputContent() {
               </li>
             ))}
           </ul>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setColumnToDelete(null);
+        }}
+        onConfirm={confirmDelete}
+        title="Confirm Deletion"
+        confirmText="Delete"
+        hideInput
+      >
+        <div className="text-sm text-gray-600 dark:text-gray-300">
+          <p>Are you sure you want to delete this column? Both the column in the grid will be deleted and in the SQL DDL.</p>
+          {columnToDelete && (
+            <div className="mt-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
+              <p><span className="font-medium">Table:</span> {columnToDelete.column.tableName}</p>
+              <p><span className="font-medium">Column:</span> {columnToDelete.column.columnName}</p>
+              <p><span className="font-medium">Type:</span> {columnToDelete.column.dataType}</p>
+            </div>
+          )}
         </div>
       </Modal>
     </div>
