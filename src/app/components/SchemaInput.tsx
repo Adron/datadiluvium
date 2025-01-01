@@ -4,6 +4,8 @@ import { useState, useCallback, useEffect, Suspense } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useSearchParams } from 'next/navigation';
 import Modal from './Modal';
+import { generatorRegistry } from '../lib/generators/registry';
+import type { GeneratorConfig, GeneratedValue } from '../lib/generators/types';
 
 type SchemaColumn = {
   tableName: string;
@@ -26,6 +28,15 @@ type ValidationResult = {
   dialects: SQLDialect[];
 };
 
+type GeneratedColumn = {
+  columnName: string;
+  data: GeneratedValue[];
+};
+
+type GeneratedTableData = {
+  [tableName: string]: GeneratedColumn[];
+};
+
 function SchemaInputContent() {
   const [schemaText, setSchemaText] = useState('');
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
@@ -35,6 +46,9 @@ function SchemaInputContent() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [columnToDelete, setColumnToDelete] = useState<{index: number, column: SchemaColumn} | null>(null);
   const [unselectedColumns, setUnselectedColumns] = useState<SchemaColumn[]>([]);
+  const [availableGenerators, setAvailableGenerators] = useState<{ [key: string]: GeneratorConfig[] }>({});
+  const [rowCount, setRowCount] = useState<number>(10);
+  const [generatedData, setGeneratedData] = useState<GeneratedTableData | null>(null);
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -52,6 +66,21 @@ function SchemaInputContent() {
       }
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const newAvailableGenerators: { [key: string]: GeneratorConfig[] } = {};
+    console.log('Updating available generators for columns:', schemaColumns);
+    
+    schemaColumns.forEach(column => {
+      console.log(`Processing column ${column.tableName}.${column.columnName} with type ${column.dataType}`);
+      const compatibleGenerators = generatorRegistry.getCompatibleGenerators(column.dataType);
+      console.log(`Found generators for ${column.tableName}.${column.columnName}:`, compatibleGenerators);
+      newAvailableGenerators[`${column.tableName}.${column.columnName}`] = compatibleGenerators;
+    });
+
+    console.log('Final available generators:', newAvailableGenerators);
+    setAvailableGenerators(newAvailableGenerators);
+  }, [schemaColumns]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -121,16 +150,27 @@ function SchemaInputContent() {
           defaultValue = defaultMatch[1].replace(/['"`]/g, '');
         }
 
+        // Normalize the data type to match our generator compatibility
+        const normalizedDataType = dataType.toUpperCase().trim();
+        
         columns.push({
           tableName,
           columnName,
-          dataType: dataType.toUpperCase(),
-          defaultValue
+          dataType: normalizedDataType,
+          defaultValue,
+          generator: '' // Initialize with empty generator
         });
       });
     });
 
     setSchemaColumns(columns);
+    
+    // Log the processed columns and available generators for debugging
+    console.log('Processed Columns:', columns);
+    columns.forEach(col => {
+      const compatibleGens = generatorRegistry.getCompatibleGenerators(col.dataType);
+      console.log(`Compatible generators for ${col.tableName}.${col.columnName} (${col.dataType}):`, compatibleGens);
+    });
   };
 
   const handleSaveSchema = (schemaName?: string) => {
@@ -314,10 +354,44 @@ function SchemaInputContent() {
     return true;
   };
 
-  const handleGenerateData = () => {
+  const handleGenerateData = async () => {
     if (validateGenerators()) {
-      // TODO: Proceed with data generation
-      console.log('Generating data...');
+      try {
+        // Generate data for each column
+        const generatedColumns = await Promise.all(
+          schemaColumns.map(async (col) => {
+            const generatorKey = col.generator?.replace(/\s+/g, '').toLowerCase() || '';
+            console.log(`Looking up generator with key: ${generatorKey}`);
+            const generator = generatorRegistry.get(generatorKey);
+            if (!generator) {
+              throw new Error(`Generator not found for column ${col.tableName}.${col.columnName} (key: ${generatorKey})`);
+            }
+            const data = await generator.generate(rowCount);
+            return {
+              tableName: col.tableName,
+              columnName: col.columnName,
+              data
+            };
+          })
+        );
+
+        // Group data by table
+        const tableData = generatedColumns.reduce((acc, col) => {
+          if (!acc[col.tableName]) {
+            acc[col.tableName] = [];
+          }
+          acc[col.tableName].push({
+            columnName: col.columnName,
+            data: col.data
+          });
+          return acc;
+        }, {} as GeneratedTableData);
+
+        setGeneratedData(tableData);
+      } catch (error) {
+        console.error('Error generating data:', error);
+        // TODO: Add error handling UI
+      }
     }
   };
 
@@ -445,59 +519,121 @@ function SchemaInputContent() {
         </div>
       )}
 
-      <div className="mt-4 flex gap-4 justify-end items-center">
-        <div className="flex gap-4">
-          <button
-            onClick={() => {
-              setSchemaText('');
-              setValidationResult(null);
-              setSchemaColumns([]);
-            }}
-            className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-          >
-            Clear
-          </button>
-          {schemaText && (
-            <>
-              <button
-                onClick={() => {
-                  const validationResult = detectSQLFeatures(schemaText);
-                  setValidationResult(validationResult);
-                }}
-                className="px-4 py-2 text-sm text-white bg-green-500 hover:bg-green-600 rounded-md transition-colors"
-              >
-                Validate
-              </button>
-              <button
-                onClick={processSchema}
-                className="px-4 py-2 text-sm text-white bg-blue-500 hover:bg-blue-600 rounded-md transition-colors"
-              >
-                Process Schema
-              </button>
-            </>
-          )}
-        </div>
+      <div className="mt-4 flex items-center gap-4 justify-end">
+        <button
+          onClick={() => {
+            setSchemaText('');
+            setValidationResult(null);
+            setSchemaColumns([]);
+          }}
+          className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white"
+        >
+          Clear
+        </button>
 
-        {schemaColumns.length > 0 && (
-          <>
-            <div className="w-px h-8 bg-gray-200 dark:bg-gray-700 mx-4" />
-            <div className="flex gap-4">
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="px-4 py-2 text-sm text-white bg-green-500 hover:bg-green-600 rounded-md transition-colors"
-              >
-                Save Schema
-              </button>
-              <button
-                onClick={handleGenerateData}
-                className="px-4 py-2 text-sm text-white bg-blue-500 hover:bg-blue-600 rounded-md transition-colors"
-              >
-                Generate Data
-              </button>
-            </div>
-          </>
-        )}
+        <button
+          onClick={() => setValidationResult(detectSQLFeatures(schemaText))}
+          className="px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+        >
+          Validate
+        </button>
+
+        <button
+          onClick={processSchema}
+          className="px-4 py-2 text-sm font-medium text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300"
+        >
+          Process Schema
+        </button>
+
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="px-4 py-2 text-sm font-medium text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300"
+        >
+          Save Schema
+        </button>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min="1"
+            value={rowCount}
+            onChange={(e) => setRowCount(Math.max(1, parseInt(e.target.value) || 1))}
+            className="w-20 px-2 py-1 text-sm border rounded-md dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
+            aria-label="Number of rows to generate"
+          />
+          <button
+            onClick={handleGenerateData}
+            className="px-4 py-2 text-sm font-medium text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
+          >
+            Generate Data
+          </button>
+        </div>
       </div>
+
+      {generatedData && (
+        <div className="mt-8 mb-8 space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Generated Data</h3>
+            <button
+              onClick={() => {
+                const jsonStr = JSON.stringify(generatedData, null, 2);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'generated_data.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              }}
+              className="px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            >
+              Download JSON
+            </button>
+          </div>
+          {Object.entries(generatedData).map(([tableName, columns]) => (
+            <div key={tableName} className="bg-white dark:bg-gray-900 shadow rounded-lg overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{tableName}</h4>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-800">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Row
+                      </th>
+                      {columns.map(col => (
+                        <th key={col.columnName} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                          {col.columnName}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                    {Array.from({ length: rowCount }).map((_, rowIndex) => (
+                      <tr key={rowIndex}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                          {rowIndex + 1}
+                        </td>
+                        {columns.map(col => (
+                          <td key={col.columnName} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                            {typeof col.data[rowIndex] === 'object' 
+                              ? (col.data[rowIndex] as Date).toISOString() 
+                              : String(col.data[rowIndex])
+                            }
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {schemaColumns.length > 0 && (
         <div className="mt-8">
@@ -543,16 +679,22 @@ function SchemaInputContent() {
                           className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
                           value={column.generator || ''}
                           onChange={(e) => {
+                            console.log(`Changing generator for ${column.tableName}.${column.columnName} to:`, e.target.value);
                             const newColumns = [...schemaColumns];
                             newColumns[index] = { ...column, generator: e.target.value };
                             setSchemaColumns(newColumns);
                           }}
                         >
-                          <option value="">Generation Option</option>
-                          <option value="random">Random</option>
-                          <option value="sequence">Sequence</option>
-                          <option value="faker">Faker</option>
-                          <option value="custom">Custom</option>
+                          <option value="">Select Generator</option>
+                          {(() => {
+                            const generators = availableGenerators[`${column.tableName}.${column.columnName}`] || [];
+                            console.log(`Rendering generators for ${column.tableName}.${column.columnName}:`, generators);
+                            return generators.map((gen: GeneratorConfig) => (
+                              <option key={gen.name} value={gen.name.replace(/\s+/g, '').toLowerCase()}>
+                                {gen.name} - {gen.description}
+                              </option>
+                            ));
+                          })()}
                         </select>
                         <button
                           className="px-2 py-1 text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
