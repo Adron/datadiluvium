@@ -49,7 +49,11 @@ function SchemaInputContent() {
   const [availableGenerators, setAvailableGenerators] = useState<{ [key: string]: GeneratorConfig[] }>({});
   const [rowCount, setRowCount] = useState<number>(10);
   const [generatedData, setGeneratedData] = useState<GeneratedTableData | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const ROWS_PER_PAGE = 10;
   const searchParams = useSearchParams();
+  const [isFormatModalOpen, setIsFormatModalOpen] = useState(false);
+  const [selectedFormat, setSelectedFormat] = useState<'json' | 'csv' | 'xml' | null>(null);
 
   useEffect(() => {
     const loadSchema = searchParams.get('load');
@@ -354,43 +358,89 @@ function SchemaInputContent() {
     return true;
   };
 
+  const handleFormatSelection = async (format: 'json' | 'csv' | 'xml') => {
+    setIsFormatModalOpen(false);
+    setSelectedFormat(format);
+    await generateAndExportData(format);
+  };
+
+  const generateAndExportData = async (format: 'json' | 'csv' | 'xml') => {
+    try {
+      // Generate data for each column
+      const generatedColumns = await Promise.all(
+        schemaColumns.map(async (col) => {
+          const generatorKey = col.generator?.replace(/\s+/g, '').toLowerCase() || '';
+          const generator = generatorRegistry.get(generatorKey);
+          if (!generator) {
+            throw new Error(`Generator not found for column ${col.tableName}.${col.columnName}`);
+          }
+          const data = await generator.generate(rowCount);
+          return {
+            tableName: col.tableName,
+            columnName: col.columnName,
+            data
+          };
+        })
+      );
+
+      // Group data by table
+      const tableData = generatedColumns.reduce((acc, col) => {
+        if (!acc[col.tableName]) {
+          acc[col.tableName] = [];
+        }
+        acc[col.tableName].push({
+          columnName: col.columnName,
+          data: col.data
+        });
+        return acc;
+      }, {} as GeneratedTableData);
+
+      // Export directly to file
+      handleExport(format, tableData);
+    } catch (error) {
+      console.error('Error generating data:', error);
+    }
+  };
+
   const handleGenerateData = async () => {
     if (validateGenerators()) {
-      try {
-        // Generate data for each column
-        const generatedColumns = await Promise.all(
-          schemaColumns.map(async (col) => {
-            const generatorKey = col.generator?.replace(/\s+/g, '').toLowerCase() || '';
-            console.log(`Looking up generator with key: ${generatorKey}`);
-            const generator = generatorRegistry.get(generatorKey);
-            if (!generator) {
-              throw new Error(`Generator not found for column ${col.tableName}.${col.columnName} (key: ${generatorKey})`);
+      if (rowCount > 1000) {
+        setIsFormatModalOpen(true);
+      } else {
+        try {
+          // Generate data for each column
+          const generatedColumns = await Promise.all(
+            schemaColumns.map(async (col) => {
+              const generatorKey = col.generator?.replace(/\s+/g, '').toLowerCase() || '';
+              const generator = generatorRegistry.get(generatorKey);
+              if (!generator) {
+                throw new Error(`Generator not found for column ${col.tableName}.${col.columnName}`);
+              }
+              const data = await generator.generate(rowCount);
+              return {
+                tableName: col.tableName,
+                columnName: col.columnName,
+                data
+              };
+            })
+          );
+
+          // Group data by table
+          const tableData = generatedColumns.reduce((acc, col) => {
+            if (!acc[col.tableName]) {
+              acc[col.tableName] = [];
             }
-            const data = await generator.generate(rowCount);
-            return {
-              tableName: col.tableName,
+            acc[col.tableName].push({
               columnName: col.columnName,
-              data
-            };
-          })
-        );
+              data: col.data
+            });
+            return acc;
+          }, {} as GeneratedTableData);
 
-        // Group data by table
-        const tableData = generatedColumns.reduce((acc, col) => {
-          if (!acc[col.tableName]) {
-            acc[col.tableName] = [];
-          }
-          acc[col.tableName].push({
-            columnName: col.columnName,
-            data: col.data
-          });
-          return acc;
-        }, {} as GeneratedTableData);
-
-        setGeneratedData(tableData);
-      } catch (error) {
-        console.error('Error generating data:', error);
-        // TODO: Add error handling UI
+          setGeneratedData(tableData);
+        } catch (error) {
+          console.error('Error generating data:', error);
+        }
       }
     }
   };
@@ -441,6 +491,72 @@ function SchemaInputContent() {
       setIsDeleteModalOpen(false);
       setColumnToDelete(null);
     }
+  };
+
+  const handleExport = (format: 'json' | 'csv' | 'xml', data: GeneratedTableData | null = null) => {
+    const dataToExport = data || generatedData;
+    if (!dataToExport) return;
+
+    let content = '';
+    let mimeType = '';
+    let extension = '';
+
+    switch (format) {
+      case 'json':
+        content = JSON.stringify(dataToExport, null, 2);
+        mimeType = 'application/json';
+        extension = 'json';
+        break;
+      case 'csv':
+        Object.entries(dataToExport).forEach(([tableName, columns]) => {
+          content += `Table: ${tableName}\n`;
+          content += columns.map(col => `"${col.columnName}"`).join(',') + '\n';
+          for (let i = 0; i < rowCount; i++) {
+            content += columns.map(col => {
+              const value = col.data[i];
+              return typeof value === 'object' 
+                ? `"${(value as Date).toISOString()}"` 
+                : `"${value}"`;
+            }).join(',') + '\n';
+          }
+          content += '\n';
+        });
+        mimeType = 'text/csv';
+        extension = 'csv';
+        break;
+      case 'xml':
+        content = '<?xml version="1.0" encoding="UTF-8"?>\n<data>\n';
+        Object.entries(dataToExport).forEach(([tableName, columns]) => {
+          content += `  <table name="${tableName}">\n`;
+          for (let i = 0; i < rowCount; i++) {
+            content += `    <row index="${i + 1}">\n`;
+            columns.forEach(col => {
+              const value = col.data[i];
+              content += `      <${col.columnName}>${
+                typeof value === 'object' 
+                  ? (value as Date).toISOString() 
+                  : value
+              }</${col.columnName}>\n`;
+            });
+            content += '    </row>\n';
+          }
+          content += '  </table>\n';
+        });
+        content += '</data>';
+        mimeType = 'application/xml';
+        extension = 'xml';
+        break;
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `generated_data.${extension}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -525,6 +641,7 @@ function SchemaInputContent() {
             setSchemaText('');
             setValidationResult(null);
             setSchemaColumns([]);
+            setGeneratedData(null);
           }}
           className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white"
         >
@@ -557,7 +674,10 @@ function SchemaInputContent() {
             type="number"
             min="1"
             value={rowCount}
-            onChange={(e) => setRowCount(Math.max(1, parseInt(e.target.value) || 1))}
+            onChange={(e) => {
+              const newValue = Math.max(1, parseInt(e.target.value) || 1);
+              setRowCount(newValue);
+            }}
             className="w-20 px-2 py-1 text-sm border rounded-md dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200"
             aria-label="Number of rows to generate"
           />
@@ -574,23 +694,27 @@ function SchemaInputContent() {
         <div className="mt-8 mb-8 space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Generated Data</h3>
-            <button
-              onClick={() => {
-                const jsonStr = JSON.stringify(generatedData, null, 2);
-                const blob = new Blob([jsonStr], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'generated_data.json';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-              }}
-              className="px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-            >
-              Download JSON
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 dark:text-gray-400">Export as:</span>
+              <button
+                onClick={() => handleExport('json')}
+                className="px-3 py-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+              >
+                JSON
+              </button>
+              <button
+                onClick={() => handleExport('csv')}
+                className="px-3 py-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+              >
+                CSV
+              </button>
+              <button
+                onClick={() => handleExport('xml')}
+                className="px-3 py-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+              >
+                XML
+              </button>
+            </div>
           </div>
           {Object.entries(generatedData).map(([tableName, columns]) => (
             <div key={tableName} className="bg-white dark:bg-gray-900 shadow rounded-lg overflow-hidden">
@@ -612,24 +736,55 @@ function SchemaInputContent() {
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                    {Array.from({ length: rowCount }).map((_, rowIndex) => (
-                      <tr key={rowIndex}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                          {rowIndex + 1}
-                        </td>
-                        {columns.map(col => (
-                          <td key={col.columnName} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                            {typeof col.data[rowIndex] === 'object' 
-                              ? (col.data[rowIndex] as Date).toISOString() 
-                              : String(col.data[rowIndex])
-                            }
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
+                    {Array.from({ length: Math.min(ROWS_PER_PAGE, columns[0]?.data.length || 0) })
+                      .map((_, index) => {
+                        const rowIndex = (currentPage - 1) * ROWS_PER_PAGE + index;
+                        if (rowIndex >= (columns[0]?.data.length || 0)) return null;
+                        return (
+                          <tr key={rowIndex}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                              {rowIndex + 1}
+                            </td>
+                            {columns.map(col => (
+                              <td key={col.columnName} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                {typeof col.data[rowIndex] === 'object' 
+                                  ? (col.data[rowIndex] as Date).toISOString() 
+                                  : String(col.data[rowIndex])
+                                }
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                    })}
                   </tbody>
                 </table>
               </div>
+              {columns[0]?.data.length > ROWS_PER_PAGE && (
+                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </button>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      Page {currentPage} of {Math.ceil((columns[0]?.data.length || 0) / ROWS_PER_PAGE)}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(Math.ceil((columns[0]?.data.length || 0) / ROWS_PER_PAGE), p + 1))}
+                      disabled={currentPage === Math.ceil((columns[0]?.data.length || 0) / ROWS_PER_PAGE)}
+                      className="px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </button>
+                  </div>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    Showing rows {((currentPage - 1) * ROWS_PER_PAGE) + 1} to {Math.min(currentPage * ROWS_PER_PAGE, columns[0]?.data.length || 0)} of {columns[0]?.data.length || 0}
+                  </span>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -763,6 +918,42 @@ function SchemaInputContent() {
               <p><span className="font-medium">Type:</span> {columnToDelete.column.dataType}</p>
             </div>
           )}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isFormatModalOpen}
+        onClose={() => setIsFormatModalOpen(false)}
+        title="Select Export Format"
+        hideInput
+        confirmText="Cancel"
+        onConfirm={() => setIsFormatModalOpen(false)}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+            For large datasets (over 1000 rows), data will be generated directly to a file.
+            Please select your preferred format:
+          </p>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => handleFormatSelection('json')}
+              className="w-full px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+            >
+              JSON Format
+            </button>
+            <button
+              onClick={() => handleFormatSelection('csv')}
+              className="w-full px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+            >
+              CSV Format
+            </button>
+            <button
+              onClick={() => handleFormatSelection('xml')}
+              className="w-full px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+            >
+              XML Format
+            </button>
+          </div>
         </div>
       </Modal>
     </div>
