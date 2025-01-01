@@ -491,33 +491,41 @@ function SchemaInputContent() {
           Clear
         </button>
 
-        <button
-          onClick={() => setValidationResult(detectSQLFeatures(schemaText))}
-          className="px-4 py-2 text-sm font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 rounded-md transition-colors"
-        >
-          Validate
-        </button>
+        {schemaText && (
+          <button
+            onClick={() => setValidationResult(detectSQLFeatures(schemaText))}
+            className="px-4 py-2 text-sm font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 rounded-md transition-colors"
+          >
+            Validate
+          </button>
+        )}
 
-        <button
-          onClick={processSchema}
-          className="px-4 py-2 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 rounded-md transition-colors"
-        >
-          Process Schema
-        </button>
+        {validationResult?.isValid && (
+          <button
+            onClick={processSchema}
+            className="px-4 py-2 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 rounded-md transition-colors"
+          >
+            Process Schema
+          </button>
+        )}
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="px-4 py-2 text-sm font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-md transition-colors"
-        >
-          Save Schema
-        </button>
+        {schemaColumns.length > 0 && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="px-4 py-2 text-sm font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-md transition-colors"
+          >
+            Save Schema
+          </button>
+        )}
 
-        <button
-          onClick={handleGenerateClick}
-          className="px-4 py-2 text-sm font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/50 rounded-md transition-colors"
-        >
-          Generate Data
-        </button>
+        {schemaColumns.length > 0 && schemaColumns.every(col => col.generator && col.generator !== '') && (
+          <button
+            onClick={handleGenerateClick}
+            className="px-4 py-2 text-sm font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/50 rounded-md transition-colors"
+          >
+            Generate Data
+          </button>
+        )}
       </div>
 
       {schemaColumns.length > 0 && (
