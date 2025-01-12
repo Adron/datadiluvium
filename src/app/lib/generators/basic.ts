@@ -266,4 +266,32 @@ export const booleanGenerator: GeneratorConfig = {
       Math.random() < (finalOptions.trueWeight || 0.5)
     );
   }
+};
+
+export const foreignKeyGenerator: GeneratorConfig = {
+  name: 'Foreign Key',
+  description: 'References values from another column',
+  category: 'id',
+  compatibleTypes: [
+    'NUMBER', 'INT', 'INTEGER', 'BIGINT', 'UUID', 'VARCHAR',
+    'VARCHAR2', 'CHAR', 'TEXT', 'STRING'
+  ],
+  defaultOptions: {
+    referencedTable: '',
+    referencedColumn: '',
+    referencedValues: []
+  },
+  generate: async (count: number, options?: GeneratorOptions) => {
+    const finalOptions = { ...foreignKeyGenerator.defaultOptions, ...options };
+    
+    if (!finalOptions.referencedValues || finalOptions.referencedValues.length === 0) {
+      throw new Error(`No referenced values available for foreign key from ${finalOptions.referencedTable}.${finalOptions.referencedColumn}`);
+    }
+
+    // Generate random values from the referenced values
+    return Array.from({ length: count }, () => {
+      const randomIndex = Math.floor(Math.random() * finalOptions.referencedValues!.length);
+      return finalOptions.referencedValues![randomIndex];
+    });
+  }
 }; 

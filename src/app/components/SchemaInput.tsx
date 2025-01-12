@@ -13,6 +13,8 @@ type SchemaColumn = {
   dataType: string;
   defaultValue: string | null;
   generator?: string;
+  referencedTable?: string;
+  referencedColumn?: string;
 };
 
 type SQLDialect = {
@@ -32,6 +34,9 @@ function SchemaInputContent() {
   const [schemaText, setSchemaText] = useState('');
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [schemaColumns, setSchemaColumns] = useState<SchemaColumn[]>([]);
+  const [activeSchemaName, setActiveSchemaName] = useState<string | null>(null);
+  const [isModified, setIsModified] = useState(false);
+  const [lastProcessedSQL, setLastProcessedSQL] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isValidationModalOpen, setIsValidationModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -49,13 +54,41 @@ function SchemaInputContent() {
       if (schema) {
         setSchemaText(schema.sql);
         setSchemaColumns(schema.columns);
+        setActiveSchemaName(loadSchema);
+        setIsModified(false);
         // Clear the URL parameter after loading
         const url = new URL(window.location.href);
         url.searchParams.delete('load');
         window.history.replaceState({}, '', url);
       }
+    } else {
+      // Check for working schema when returning from generate page
+      const workingSchema = localStorage.getItem('workingSchema');
+      if (workingSchema) {
+        const schema = JSON.parse(workingSchema);
+        setSchemaText(schema.sql);
+        setSchemaColumns(schema.columns);
+        setValidationResult(schema.validationResult);
+        setActiveSchemaName(schema.name || null);
+        setIsModified(false);
+        // Clear working schema after loading
+        localStorage.removeItem('workingSchema');
+      }
     }
   }, [searchParams]);
+
+  // Add effect to track modifications
+  useEffect(() => {
+    if (activeSchemaName) {
+      const savedSchemas = JSON.parse(localStorage.getItem('savedSchemas') || '{}');
+      const savedSchema = savedSchemas[activeSchemaName];
+      if (savedSchema) {
+        const isChanged = savedSchema.sql !== schemaText || 
+          JSON.stringify(savedSchema.columns) !== JSON.stringify(schemaColumns);
+        setIsModified(isChanged);
+      }
+    }
+  }, [schemaText, schemaColumns, activeSchemaName]);
 
   useEffect(() => {
     const newAvailableGenerators: { [key: string]: GeneratorConfig[] } = {};
@@ -154,6 +187,7 @@ function SchemaInputContent() {
     });
 
     setSchemaColumns(columns);
+    setLastProcessedSQL(schemaText);
     
     // Log the processed columns and available generators for debugging
     console.log('Processed Columns:', columns);
@@ -180,6 +214,10 @@ function SchemaInputContent() {
 
     // Save back to localStorage
     localStorage.setItem('savedSchemas', JSON.stringify(savedSchemas));
+    
+    // Update active schema name and reset modified flag
+    setActiveSchemaName(schemaName);
+    setIsModified(false);
     
     setIsModalOpen(false);
 
@@ -351,6 +389,13 @@ function SchemaInputContent() {
         columns: schemaColumns,
         sql: schemaText
       }));
+      // Save working schema state
+      localStorage.setItem('workingSchema', JSON.stringify({
+        columns: schemaColumns,
+        sql: schemaText,
+        validationResult,
+        name: activeSchemaName
+      }));
       router.push('/generate');
     }
   };
@@ -403,207 +448,272 @@ function SchemaInputContent() {
     }
   };
 
+  const findCompatibleColumns = useCallback((currentColumn: SchemaColumn) => {
+    return schemaColumns.filter(col => {
+      // Include columns from any table (including same table)
+      // Must have same data type
+      // Must not be a foreign key itself
+      // Must not be the current column
+      return col.dataType === currentColumn.dataType && // Same data type
+             col.generator !== 'Foreign Key' && // Not another foreign key
+             !(col.tableName === currentColumn.tableName && col.columnName === currentColumn.columnName); // Not the current column
+    });
+  }, [schemaColumns]);
+
   return (
     <div className="w-full">
-      <div
-        {...getRootProps()}
-        className={`relative border-2 border-dashed rounded-lg p-4 transition-colors ${
-          isDragActive
-            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-            : 'border-gray-300 dark:border-gray-600'
-        }`}
-      >
-        <input {...getInputProps()} />
-        
-        <textarea
-          value={schemaText}
-          onChange={(e) => {
-            setSchemaText(e.target.value);
-            setValidationResult(null);
-            setSchemaColumns([]);
-          }}
-          placeholder="Paste your schema here or drag and drop a file..."
-          className="w-full h-64 p-4 bg-transparent resize-y rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          onClick={(e) => e.stopPropagation()}
-        />
-
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          {!schemaText && (
-            <div className="text-gray-400 dark:text-gray-500 text-center">
-              <p className="text-sm">Drop your schema file here</p>
-              <p className="text-xs mt-1">or paste directly in the text area</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {validationResult && (
-        <div className="mt-4 space-y-4">
-          <div className={`p-4 rounded-md ${
-            validationResult.isValid 
-              ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
-              : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
-          }`}>
-            {validationResult.isValid 
-              ? 'Schema is valid SQL'
-              : `Schema validation failed: ${validationResult.error}`
-            }
-          </div>
-
-          {validationResult.isValid && validationResult.dialects.length > 0 && (
-            <div className="bg-gray-50 dark:bg-gray-900 rounded-md p-4">
-              <h3 className="text-sm font-semibold mb-3">Detected SQL Dialects:</h3>
-              <ul className="space-y-3">
-                {validationResult.dialects.map(dialect => (
-                  <li key={dialect.name} className="text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{dialect.name}</span>
-                      <span className="text-gray-500 dark:text-gray-400">
-                        {dialect.confidence.toFixed(0)}% confidence
-                      </span>
-                    </div>
-                    {dialect.features.length > 0 && (
-                      <ul className="mt-1 pl-4 text-xs text-gray-600 dark:text-gray-400">
-                        {dialect.features.map((feature, index) => (
-                          <li key={index} className="list-disc">
-                            {feature}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="mt-4 flex items-center gap-4 justify-end">
-        <button
-          onClick={() => {
-            setSchemaText('');
-            setValidationResult(null);
-            setSchemaColumns([]);
-          }}
-          className="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
+      <h1 className="text-3xl font-bold mb-6">
+        Schema from{activeSchemaName ? ` ${activeSchemaName}` : ''}
+      </h1>
+      
+      <div className="max-w-4xl">
+        <div
+          {...getRootProps()}
+          className={`relative border-2 border-dashed rounded-lg p-4 transition-colors ${
+            isDragActive
+              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+              : 'border-gray-300 dark:border-gray-600'
+          }`}
         >
-          Clear
-        </button>
+          <input {...getInputProps()} />
+          
+          <textarea
+            value={schemaText}
+            onChange={(e) => {
+              setSchemaText(e.target.value);
+              setValidationResult(null);
+              if (schemaColumns.length > 0) {
+                // Only clear columns if we already have processed schema
+                setSchemaColumns([]);
+              }
+            }}
+            placeholder="Paste your schema here or drag and drop a file..."
+            className="w-full h-64 p-4 bg-transparent resize-y rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onClick={(e) => e.stopPropagation()}
+          />
 
-        {schemaText && (
-          <button
-            onClick={() => setValidationResult(detectSQLFeatures(schemaText))}
-            className="px-4 py-2 text-sm font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 rounded-md transition-colors"
-          >
-            Validate
-          </button>
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+            {!schemaText && (
+              <div className="text-gray-400 dark:text-gray-500 text-center">
+                <p className="text-sm">Drop your schema file here</p>
+                <p className="text-xs mt-1">or paste directly in the text area</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {validationResult && (
+          <div className="mt-4 space-y-4">
+            <div className={`p-4 rounded-md ${
+              validationResult.isValid 
+                ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+                : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+            }`}>
+              {validationResult.isValid 
+                ? 'Schema is valid SQL'
+                : `Schema validation failed: ${validationResult.error}`
+              }
+            </div>
+
+            {validationResult.isValid && validationResult.dialects.length > 0 && (
+              <div className="bg-gray-50 dark:bg-gray-900 rounded-md p-4">
+                <h3 className="text-sm font-semibold mb-3">Detected SQL Dialects:</h3>
+                <ul className="space-y-3">
+                  {validationResult.dialects.map(dialect => (
+                    <li key={dialect.name} className="text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{dialect.name}</span>
+                        <span className="text-gray-500 dark:text-gray-400">
+                          {dialect.confidence.toFixed(0)}% confidence
+                        </span>
+                      </div>
+                      {dialect.features.length > 0 && (
+                        <ul className="mt-1 pl-4 text-xs text-gray-600 dark:text-gray-400">
+                          {dialect.features.map((feature, index) => (
+                            <li key={index} className="list-disc">
+                              {feature}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         )}
 
-        {validationResult?.isValid && (
+        <div className="mt-4 flex items-center gap-4 justify-end">
           <button
-            onClick={processSchema}
-            className="px-4 py-2 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 rounded-md transition-colors"
+            onClick={() => {
+              setSchemaText('');
+              setValidationResult(null);
+              setSchemaColumns([]);
+            }}
+            className="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
           >
-            Process Schema
+            Clear
           </button>
-        )}
+
+          {schemaText && (
+            <button
+              onClick={() => setValidationResult(detectSQLFeatures(schemaText))}
+              className="px-4 py-2 text-sm font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 rounded-md transition-colors"
+            >
+              Validate
+            </button>
+          )}
+
+          {validationResult?.isValid && (!schemaColumns.length || schemaText !== lastProcessedSQL) && (
+            <button
+              onClick={processSchema}
+              className="px-4 py-2 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 rounded-md transition-colors"
+            >
+              Process Schema
+            </button>
+          )}
+
+          {schemaColumns.length > 0 && (
+            <>
+              {activeSchemaName && (
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="px-4 py-2 text-sm font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-md transition-colors"
+                >
+                  Save Schema As
+                </button>
+              )}
+              {(!activeSchemaName || isModified) && (
+                <button
+                  onClick={() => {
+                    if (activeSchemaName) {
+                      handleSaveSchema(activeSchemaName);
+                    } else {
+                      setIsModalOpen(true);
+                    }
+                  }}
+                  className="px-4 py-2 text-sm font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-md transition-colors"
+                >
+                  Save Schema
+                </button>
+              )}
+            </>
+          )}
+
+          {schemaColumns.length > 0 && schemaColumns.every(col => col.generator && col.generator !== '') && (
+            <button
+              onClick={handleGenerateClick}
+              className="px-4 py-2 text-sm font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/50 rounded-md transition-colors"
+            >
+              Generate Data
+            </button>
+          )}
+        </div>
 
         {schemaColumns.length > 0 && (
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="px-4 py-2 text-sm font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 rounded-md transition-colors"
-          >
-            Save Schema
-          </button>
-        )}
-
-        {schemaColumns.length > 0 && schemaColumns.every(col => col.generator && col.generator !== '') && (
-          <button
-            onClick={handleGenerateClick}
-            className="px-4 py-2 text-sm font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/50 rounded-md transition-colors"
-          >
-            Generate Data
-          </button>
+          <div className="mt-8">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-800">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Table Name
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Column Name
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Data Type
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Generator
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      Generator Details
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                  {schemaColumns.map((column, index) => (
+                    <tr key={`${column.tableName}-${column.columnName}-${index}`}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {column.tableName}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {column.columnName}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {column.dataType}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        <div className="flex items-center gap-2">
+                          <select 
+                            className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
+                            value={column.generator || ''}
+                            onChange={(e) => {
+                              console.log(`Changing generator for ${column.tableName}.${column.columnName} to:`, e.target.value);
+                              const newColumns = [...schemaColumns];
+                              newColumns[index] = { ...column, generator: e.target.value };
+                              setSchemaColumns(newColumns);
+                            }}
+                          >
+                            <option value="">Select Generator</option>
+                            {(() => {
+                              const generators = availableGenerators[`${column.tableName}.${column.columnName}`] || [];
+                              console.log(`Rendering generators for ${column.tableName}.${column.columnName}:`, generators);
+                              return generators.map((gen: GeneratorConfig) => (
+                                <option key={gen.name} value={gen.name}>
+                                  {gen.name} - {gen.description}
+                                </option>
+                              ));
+                            })()}
+                          </select>
+                          <button
+                            className="px-2 py-1 text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                            onClick={() => handleDeleteColumn(index, column)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {column.generator === 'Foreign Key' ? (
+                          <select 
+                            className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
+                            value={column.referencedTable && column.referencedColumn ? 
+                              `${column.referencedTable}.${column.referencedColumn}` : ''}
+                            onChange={(e) => {
+                              const [refTable, refColumn] = e.target.value.split('.');
+                              const newColumns = [...schemaColumns];
+                              newColumns[index] = {
+                                ...column,
+                                referencedTable: refTable || undefined,
+                                referencedColumn: refColumn || undefined
+                              };
+                              setSchemaColumns(newColumns);
+                            }}
+                          >
+                            <option value="">Select Referenced Column</option>
+                            {findCompatibleColumns(column).map((candidate) => (
+                              <option 
+                                key={`${candidate.tableName}.${candidate.columnName}`}
+                                value={`${candidate.tableName}.${candidate.columnName}`}
+                              >
+                                {candidate.tableName}.{candidate.columnName}
+                              </option>
+                            ))}
+                          </select>
+                        ) : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
-
-      {schemaColumns.length > 0 && (
-        <div className="mt-8">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-800">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Table Name
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Column Name
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Data Type
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Default Value
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Generator
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                {schemaColumns.map((column, index) => (
-                  <tr key={`${column.tableName}-${column.columnName}-${index}`}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      {column.tableName}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      {column.columnName}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      {column.dataType}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      {column.defaultValue || '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      <div className="flex items-center gap-2">
-                        <select 
-                          className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
-                          value={column.generator || ''}
-                          onChange={(e) => {
-                            console.log(`Changing generator for ${column.tableName}.${column.columnName} to:`, e.target.value);
-                            const newColumns = [...schemaColumns];
-                            newColumns[index] = { ...column, generator: e.target.value };
-                            setSchemaColumns(newColumns);
-                          }}
-                        >
-                          <option value="">Select Generator</option>
-                          {(() => {
-                            const generators = availableGenerators[`${column.tableName}.${column.columnName}`] || [];
-                            console.log(`Rendering generators for ${column.tableName}.${column.columnName}:`, generators);
-                            return generators.map((gen: GeneratorConfig) => (
-                              <option key={gen.name} value={gen.name.replace(/\s+/g, '').toLowerCase()}>
-                                {gen.name} - {gen.description}
-                              </option>
-                            ));
-                          })()}
-                        </select>
-                        <button
-                          className="px-2 py-1 text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                          onClick={() => handleDeleteColumn(index, column)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       <Modal
         isOpen={isModalOpen}

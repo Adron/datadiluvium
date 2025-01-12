@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '../components/Navigation';
+import { generatorRegistry } from '../lib/generators/registry';
+import type { GeneratorConfig, GeneratedValue } from '../lib/generators/types';
 
 type SchemaColumn = {
   tableName: string;
@@ -10,12 +12,15 @@ type SchemaColumn = {
   dataType: string;
   defaultValue: string | null;
   generator?: string;
+  referencedTable?: string;
+  referencedColumn?: string;
 };
 
 export default function GeneratePage() {
   const router = useRouter();
   const [rowCount, setRowCount] = useState<number>(10);
   const [schema, setSchema] = useState<{ columns: SchemaColumn[]; sql: string } | null>(null);
+  const [sampleValues, setSampleValues] = useState<{ [key: string]: string[] }>({});
 
   useEffect(() => {
     // Load schema from localStorage
@@ -26,6 +31,77 @@ export default function GeneratePage() {
     }
     setSchema(JSON.parse(savedSchema));
   }, [router]);
+
+  // Generate sample values when schema loads or changes
+  useEffect(() => {
+    if (!schema?.columns) return;
+
+    const generateSamples = async () => {
+      const samples: { [key: string]: string[] } = {};
+      const candidateKeyValues: { [key: string]: string[] } = {};
+
+      // First pass: Generate samples for non-foreign key columns
+      for (const column of schema.columns) {
+        if (!column.generator) continue;
+
+        const columnKey = `${column.tableName}.${column.columnName}`;
+        console.log(`Attempting to generate samples for ${columnKey} using generator: ${column.generator}`);
+        const generator = generatorRegistry.get(column.generator);
+        console.log(`Found generator:`, generator?.name);
+        
+        if (generator && generator.name !== 'Candidate Key') {
+          try {
+            let values;
+            if (generator.name === 'Sequential Number') {
+              // For sequential numbers, start at a random number between 1-10
+              const startAt = Math.floor(Math.random() * 10) + 1;
+              console.log(`Generating sequential numbers starting at ${startAt}`);
+              values = await generator.generate(3, { startAt });
+            } else if (generator.name === 'Product Code') {
+              console.log(`Generating product codes with default format`);
+              values = await generator.generate(3);
+            } else {
+              values = await generator.generate(3);
+            }
+            console.log(`Generated values for ${columnKey}:`, values);
+            samples[columnKey] = values.map(v => v?.toString() || '');
+            // Store values for potential foreign key references
+            candidateKeyValues[columnKey] = values.map(v => v?.toString() || '');
+          } catch (error) {
+            console.error(`Error generating samples for ${columnKey}:`, error);
+            samples[columnKey] = ['Error generating samples'];
+          }
+        }
+      }
+
+      // Second pass: Handle foreign key references
+      for (const column of schema.columns) {
+        if (!column.generator) continue;
+
+        const columnKey = `${column.tableName}.${column.columnName}`;
+        console.log(`Checking foreign key for ${columnKey} using generator: ${column.generator}`);
+        const generator = generatorRegistry.get(column.generator);
+        
+        if (generator && generator.name === 'Candidate Key' && column.referencedTable && column.referencedColumn) {
+          // For foreign keys, use the referenced column's values
+          const referencedKey = `${column.referencedTable}.${column.referencedColumn}`;
+          console.log(`Looking up referenced values from ${referencedKey}`);
+          const referencedValues = candidateKeyValues[referencedKey];
+          if (referencedValues) {
+            console.log(`Found referenced values:`, referencedValues);
+            samples[columnKey] = referencedValues;
+          } else {
+            console.log(`No referenced values found for ${referencedKey}`);
+            samples[columnKey] = ['Referenced values not found'];
+          }
+        }
+      }
+
+      setSampleValues(samples);
+    };
+
+    generateSamples();
+  }, [schema]);
 
   if (!schema) {
     return (
@@ -69,7 +145,7 @@ export default function GeneratePage() {
                 Generate
               </button>
               <button
-                onClick={() => router.push('/')}
+                onClick={() => router.push('/schema')}
                 className="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
               >
                 Back
@@ -97,28 +173,47 @@ export default function GeneratePage() {
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         Generator
                       </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Sample Values
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                    {schema.columns.map((column, index) => (
-                      <tr key={`${column.tableName}-${column.columnName}-${index}`}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                          {column.tableName}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                          {column.columnName}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                          {column.dataType}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                          {column.defaultValue || '-'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                          {column.generator || '-'}
-                        </td>
-                      </tr>
-                    ))}
+                    {schema.columns.map((column, index) => {
+                      const columnKey = `${column.tableName}.${column.columnName}`;
+                      const samples = sampleValues[columnKey] || [];
+                      
+                      return (
+                        <tr key={`${column.tableName}-${column.columnName}-${index}`}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                            {column.tableName}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                            {column.columnName}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                            {column.dataType}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                            {column.defaultValue || '-'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                            {column.generator || '-'}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                            {samples.length > 0 ? (
+                              <div className="space-y-1">
+                                {samples.map((value, i) => (
+                                  <div key={i} className="font-mono text-xs">
+                                    {value}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
