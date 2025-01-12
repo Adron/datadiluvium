@@ -45,6 +45,11 @@ function SchemaInputContent() {
   const [availableGenerators, setAvailableGenerators] = useState<{ [key: string]: GeneratorConfig[] }>({});
   const searchParams = useSearchParams();
   const router = useRouter();
+  const [sql, setSql] = useState('');
+  const [schema, setSchema] = useState<{ columns: SchemaColumn[]; sql: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generatorSamples, setGeneratorSamples] = useState<{ [key: string]: any }>({});
 
   useEffect(() => {
     const loadSchema = searchParams.get('load');
@@ -370,6 +375,7 @@ function SchemaInputContent() {
   };
 
   const validateGenerators = () => {
+    // Only check for completely unselected generators
     const columnsWithoutGenerators = schemaColumns.filter(
       column => !column.generator || column.generator === ''
     );
@@ -457,6 +463,64 @@ function SchemaInputContent() {
       return col.dataType === currentColumn.dataType && // Same data type
              col.generator !== 'Foreign Key' && // Not another foreign key
              !(col.tableName === currentColumn.tableName && col.columnName === currentColumn.columnName); // Not the current column
+    });
+  }, [schemaColumns]);
+
+  useEffect(() => {
+    // Check for generation error in localStorage
+    const error = localStorage.getItem('generationError');
+    if (error) {
+      setGenerationError(error);
+      localStorage.removeItem('generationError');
+    }
+  }, []);
+
+  // Add this function to generate samples for specific generators
+  const generateSamplesForColumn = async (column: SchemaColumn) => {
+    if (!column.generator) return;
+
+    const generator = generatorRegistry.get(column.generator);
+    if (!generator) return;
+
+    const columnKey = `${column.tableName}.${column.columnName}`;
+    
+    try {
+      switch (column.generator) {
+        case 'Sequential Number':
+          // For sequential number, we'll just show the next number
+          const currentMax = generatorSamples[columnKey]?.nextNumber || 0;
+          setGeneratorSamples(prev => ({
+            ...prev,
+            [columnKey]: { nextNumber: currentMax + 1 }
+          }));
+          break;
+          
+        case 'Username':
+        case 'Product Code':
+        case 'Company Name':
+          // Generate 2 samples for these types
+          const samples = await generator.generate(2);
+          setGeneratorSamples(prev => ({
+            ...prev,
+            [columnKey]: { samples }
+          }));
+          break;
+          
+        case 'Foreign Key':
+          // For foreign keys, we don't need to generate samples
+          break;
+      }
+    } catch (error) {
+      console.error(`Error generating samples for ${columnKey}:`, error);
+    }
+  };
+
+  // Add effect to generate samples when generator changes
+  useEffect(() => {
+    schemaColumns.forEach(column => {
+      if (column.generator) {
+        generateSamplesForColumn(column);
+      }
     });
   }, [schemaColumns]);
 
@@ -627,10 +691,10 @@ function SchemaInputContent() {
                       Data Type
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Generator
+                      Generator Details
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                      Generator Details
+                      Generator
                     </th>
                   </tr>
                 </thead>
@@ -645,6 +709,61 @@ function SchemaInputContent() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                         {column.dataType}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        {(() => {
+                          const columnKey = `${column.tableName}.${column.columnName}`;
+                          const samples = generatorSamples[columnKey];
+
+                          if (column.generator === 'Foreign Key') {
+                            return (
+                              <select 
+                                className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
+                                value={column.referencedTable && column.referencedColumn ? 
+                                  `${column.referencedTable}.${column.referencedColumn}` : ''}
+                                onChange={(e) => {
+                                  const [refTable, refColumn] = e.target.value.split('.');
+                                  const newColumns = [...schemaColumns];
+                                  newColumns[index] = {
+                                    ...column,
+                                    referencedTable: refTable || undefined,
+                                    referencedColumn: refColumn || undefined
+                                  };
+                                  setSchemaColumns(newColumns);
+                                }}
+                              >
+                                <option value="">Select Referenced Column</option>
+                                {findCompatibleColumns(column).map((candidate) => (
+                                  <option 
+                                    key={`${candidate.tableName}.${candidate.columnName}`}
+                                    value={`${candidate.tableName}.${candidate.columnName}`}
+                                  >
+                                    {candidate.tableName}.{candidate.columnName}
+                                  </option>
+                                ))}
+                              </select>
+                            );
+                          }
+
+                          switch (column.generator) {
+                            case 'Sequential Number':
+                              return samples?.nextNumber ? `Next number: ${samples.nextNumber}` : 'Starting at 1';
+                              
+                            case 'Username':
+                            case 'Product Code':
+                            case 'Company Name':
+                              return samples?.samples ? (
+                                <div className="space-y-1">
+                                  {samples.samples.map((sample: string, i: number) => (
+                                    <div key={i} className="font-mono text-xs">{sample}</div>
+                                  ))}
+                                </div>
+                              ) : 'Generating samples...';
+                              
+                            default:
+                              return '-';
+                          }
+                        })()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                         <div className="flex items-center gap-2">
@@ -676,35 +795,6 @@ function SchemaInputContent() {
                             Delete
                           </button>
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                        {column.generator === 'Foreign Key' ? (
-                          <select 
-                            className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 text-sm"
-                            value={column.referencedTable && column.referencedColumn ? 
-                              `${column.referencedTable}.${column.referencedColumn}` : ''}
-                            onChange={(e) => {
-                              const [refTable, refColumn] = e.target.value.split('.');
-                              const newColumns = [...schemaColumns];
-                              newColumns[index] = {
-                                ...column,
-                                referencedTable: refTable || undefined,
-                                referencedColumn: refColumn || undefined
-                              };
-                              setSchemaColumns(newColumns);
-                            }}
-                          >
-                            <option value="">Select Referenced Column</option>
-                            {findCompatibleColumns(column).map((candidate) => (
-                              <option 
-                                key={`${candidate.tableName}.${candidate.columnName}`}
-                                value={`${candidate.tableName}.${candidate.columnName}`}
-                              >
-                                {candidate.tableName}.{candidate.columnName}
-                              </option>
-                            ))}
-                          </select>
-                        ) : '-'}
                       </td>
                     </tr>
                   ))}
@@ -768,6 +858,21 @@ function SchemaInputContent() {
           )}
         </div>
       </Modal>
+
+      {generationError && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700 dark:text-red-200">{generationError}</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

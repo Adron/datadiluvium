@@ -40,64 +40,50 @@ export default function GeneratePage() {
       const samples: { [key: string]: string[] } = {};
       const candidateKeyValues: { [key: string]: string[] } = {};
 
-      // First pass: Generate samples for non-foreign key columns
-      for (const column of schema.columns) {
-        if (!column.generator) continue;
+      try {
+        // First pass: Generate samples for non-foreign key columns
+        for (const column of schema.columns) {
+          if (!column.generator || column.generator === 'Foreign Key') continue;
 
-        const columnKey = `${column.tableName}.${column.columnName}`;
-        console.log(`Attempting to generate samples for ${columnKey} using generator: ${column.generator}`);
-        const generator = generatorRegistry.get(column.generator);
-        console.log(`Found generator:`, generator?.name);
-        
-        if (generator && generator.name !== 'Candidate Key') {
+          const columnKey = `${column.tableName}.${column.columnName}`;
+          console.log(`Attempting to generate samples for ${columnKey} using generator: ${column.generator}`);
+          const generator = generatorRegistry.get(column.generator);
+          console.log(`Found generator:`, generator?.name);
+          
           try {
-            let values;
-            if (generator.name === 'Sequential Number') {
-              // For sequential numbers, start at a random number between 1-10
-              const startAt = Math.floor(Math.random() * 10) + 1;
-              console.log(`Generating sequential numbers starting at ${startAt}`);
-              values = await generator.generate(3, { startAt });
-            } else if (generator.name === 'Product Code') {
-              console.log(`Generating product codes with default format`);
-              values = await generator.generate(3);
-            } else {
-              values = await generator.generate(3);
+            if (generator) {
+              const values = await generator.generate(5);
+              samples[columnKey] = values.map(String);
+              
+              // Store candidate key values for foreign key references
+              candidateKeyValues[columnKey] = values.map(String);
             }
-            console.log(`Generated values for ${columnKey}:`, values);
-            samples[columnKey] = values.map(v => v?.toString() || '');
-            // Store values for potential foreign key references
-            candidateKeyValues[columnKey] = values.map(v => v?.toString() || '');
           } catch (error) {
             console.error(`Error generating samples for ${columnKey}:`, error);
-            samples[columnKey] = ['Error generating samples'];
+            // Don't redirect, just log the error
           }
         }
-      }
 
-      // Second pass: Handle foreign key references
-      for (const column of schema.columns) {
-        if (!column.generator) continue;
+        // Second pass: Try to generate foreign key samples
+        for (const column of schema.columns) {
+          if (column.generator !== 'Foreign Key') continue;
 
-        const columnKey = `${column.tableName}.${column.columnName}`;
-        console.log(`Checking foreign key for ${columnKey} using generator: ${column.generator}`);
-        const generator = generatorRegistry.get(column.generator);
-        
-        if (generator && generator.name === 'Candidate Key' && column.referencedTable && column.referencedColumn) {
-          // For foreign keys, use the referenced column's values
-          const referencedKey = `${column.referencedTable}.${column.referencedColumn}`;
-          console.log(`Looking up referenced values from ${referencedKey}`);
-          const referencedValues = candidateKeyValues[referencedKey];
-          if (referencedValues) {
-            console.log(`Found referenced values:`, referencedValues);
-            samples[columnKey] = referencedValues;
+          const columnKey = `${column.tableName}.${column.columnName}`;
+          const referencedKey = column.referencedTable && column.referencedColumn ? 
+            `${column.referencedTable}.${column.referencedColumn}` : null;
+
+          if (referencedKey && candidateKeyValues[referencedKey]) {
+            samples[columnKey] = candidateKeyValues[referencedKey];
           } else {
-            console.log(`No referenced values found for ${referencedKey}`);
-            samples[columnKey] = ['Referenced values not found'];
+            samples[columnKey] = ['(Values will be generated from referenced column)'];
           }
         }
-      }
 
-      setSampleValues(samples);
+        setSampleValues(samples);
+      } catch (error) {
+        console.error('Error generating samples:', error);
+        // Don't redirect, just show an error message if needed
+      }
     };
 
     generateSamples();
@@ -202,12 +188,8 @@ export default function GeneratePage() {
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
                             {samples.length > 0 ? (
-                              <div className="space-y-1">
-                                {samples.map((value, i) => (
-                                  <div key={i} className="font-mono text-xs">
-                                    {value}
-                                  </div>
-                                ))}
+                              <div className="font-mono text-xs">
+                                {samples.join(', ')}
                               </div>
                             ) : '-'}
                           </td>
