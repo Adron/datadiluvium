@@ -13,7 +13,8 @@ import {
   usernameGenerator,
   passwordGenerator,
   productCodeGenerator,
-  booleanGenerator
+  booleanGenerator,
+  foreignKeyGenerator
 } from './basic';
 
 export class DataGeneratorRegistry {
@@ -35,6 +36,7 @@ export class DataGeneratorRegistry {
     this.register(passwordGenerator);
     this.register(productCodeGenerator);
     this.register(booleanGenerator);
+    this.register(foreignKeyGenerator);
   }
 
   register(generator: GeneratorConfig): void {

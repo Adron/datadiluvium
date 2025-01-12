@@ -37,6 +37,11 @@ export type GeneratorOptions = {
   
   // Name options
   gender?: 'male' | 'female' | undefined;
+
+  // Foreign key options
+  referencedTable?: string;
+  referencedColumn?: string;
+  referencedValues?: GeneratedValue[];
 };
 
 export type GeneratorConfig = {
