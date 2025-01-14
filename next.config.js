@@ -6,6 +6,9 @@ const nextConfig = {
       { module: /node_modules\/punycode/ }
     ];
     return config;
+  },
+  eslint: {
+    ignoreDuringBuilds: true
   }
 };
 

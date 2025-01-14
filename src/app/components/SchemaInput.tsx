@@ -51,10 +51,21 @@ function SchemaInputContent() {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatorSamples, setGeneratorSamples] = useState<{ [key: string]: any }>({});
 
+  // Safe JSON parse helper
+  const safeJSONParse = (str: string | null, fallback: any = null) => {
+    if (!str) return fallback;
+    try {
+      return JSON.parse(str);
+    } catch (e) {
+      console.error('Error parsing JSON:', e);
+      return fallback;
+    }
+  };
+
   useEffect(() => {
     const loadSchema = searchParams.get('load');
     if (loadSchema) {
-      const savedSchemas = JSON.parse(localStorage.getItem('savedSchemas') || '{}');
+      const savedSchemas = safeJSONParse(localStorage.getItem('savedSchemas'), {});
       const schema = savedSchemas[loadSchema];
       if (schema) {
         setSchemaText(schema.sql);
@@ -70,14 +81,16 @@ function SchemaInputContent() {
       // Check for working schema when returning from generate page
       const workingSchema = localStorage.getItem('workingSchema');
       if (workingSchema) {
-        const schema = JSON.parse(workingSchema);
-        setSchemaText(schema.sql);
-        setSchemaColumns(schema.columns);
-        setValidationResult(schema.validationResult);
-        setActiveSchemaName(schema.name || null);
-        setIsModified(false);
-        // Clear working schema after loading
-        localStorage.removeItem('workingSchema');
+        const schema = safeJSONParse(workingSchema);
+        if (schema) {
+          setSchemaText(schema.sql);
+          setSchemaColumns(schema.columns);
+          setValidationResult(schema.validationResult);
+          setActiveSchemaName(schema.name || null);
+          setIsModified(false);
+          // Clear working schema after loading
+          localStorage.removeItem('workingSchema');
+        }
       }
     }
   }, [searchParams]);
@@ -85,7 +98,7 @@ function SchemaInputContent() {
   // Add effect to track modifications
   useEffect(() => {
     if (activeSchemaName) {
-      const savedSchemas = JSON.parse(localStorage.getItem('savedSchemas') || '{}');
+      const savedSchemas = safeJSONParse(localStorage.getItem('savedSchemas'), {});
       const savedSchema = savedSchemas[activeSchemaName];
       if (savedSchema) {
         const isChanged = savedSchema.sql !== schemaText || 

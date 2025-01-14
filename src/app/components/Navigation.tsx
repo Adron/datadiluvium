@@ -24,34 +24,24 @@ type SavedSchemas = {
 
 export default function Navigation() {
   const pathname = usePathname();
-  const [savedSchemas, setSavedSchemas] = useState<SavedSchemas>({});
+  const [savedSchemas, setSavedSchemas] = useState<{ [key: string]: any }>({});
   const [schemaToDelete, setSchemaToDelete] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Load saved schemas on mount
-    const loadSavedSchemas = () => {
-      const schemas = JSON.parse(localStorage.getItem('savedSchemas') || '{}');
-      setSavedSchemas(schemas);
-    };
-
-    // Load initially
-    loadSavedSchemas();
-
-    // Listen for updates
-    const handleSchemasUpdated = () => {
-      loadSavedSchemas();
-    };
-
-    window.addEventListener('schemasUpdated', handleSchemasUpdated);
-
-    return () => {
-      window.removeEventListener('schemasUpdated', handleSchemasUpdated);
-    };
-  }, []);
-
-  const handleDeleteSchema = (name: string) => {
-    setSchemaToDelete(name);
+  // Safe JSON parse helper
+  const safeJSONParse = (str: string | null, fallback: any = null) => {
+    if (!str) return fallback;
+    try {
+      return JSON.parse(str);
+    } catch (e) {
+      console.error('Error parsing JSON:', e);
+      return fallback;
+    }
   };
+
+  useEffect(() => {
+    const schemas = safeJSONParse(localStorage.getItem('savedSchemas'), {});
+    setSavedSchemas(schemas);
+  }, []);
 
   const confirmDelete = () => {
     if (schemaToDelete) {
@@ -130,7 +120,7 @@ export default function Navigation() {
                       {schemaToDelete === name ? (
                         // Confirmation UI
                         <div className="flex items-center px-3 py-2 rounded-md text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700">
-                          <span className="flex-1 min-w-0 truncate">Delete "{name}"?</span>
+                          <span className="flex-1 min-w-0 truncate">Delete &ldquo;{name}&rdquo;?</span>
                           <div className="flex gap-2 ml-2">
                             <button
                               onClick={(e) => {

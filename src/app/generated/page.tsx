@@ -36,19 +36,26 @@ export default function GeneratedDataPage() {
   const [generatedData, setGeneratedData] = useState<GeneratedData | null>(null);
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings | null>(null);
 
+  // Safe JSON parse helper
+  const safeJSONParse = (str: string | null, fallback: any = null) => {
+    if (!str) return fallback;
+    try {
+      return JSON.parse(str);
+    } catch (e) {
+      console.error('Error parsing JSON:', e);
+      return fallback;
+    }
+  };
+
   useEffect(() => {
-    // Load generated data and settings from localStorage
     const data = localStorage.getItem('generatedData');
     const settings = localStorage.getItem('generationSettings');
-    
-    if (!data || !settings) {
-      router.push('/generate');
-      return;
-    }
 
-    setGeneratedData(JSON.parse(data));
-    setGenerationSettings(JSON.parse(settings));
-  }, [router]);
+    if (data && settings) {
+      setGeneratedData(safeJSONParse(data));
+      setGenerationSettings(safeJSONParse(settings));
+    }
+  }, []);
 
   const handleGenerateAgain = async () => {
     if (!generationSettings) return;

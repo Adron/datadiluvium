@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navigation from '../components/Navigation';
 import { generatorRegistry } from '../lib/generators/registry';
-import type { GeneratorConfig, GeneratedValue } from '../lib/generators/types';
 
 type SchemaColumn = {
   tableName: string;
@@ -24,15 +23,23 @@ export default function GeneratePage() {
   const [sampleValues, setSampleValues] = useState<{ [key: string]: string[] }>({});
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
-  useEffect(() => {
-    // Load schema from localStorage
-    const savedSchema = localStorage.getItem('currentSchema');
-    if (!savedSchema) {
-      router.push('/');
-      return;
+  // Safe JSON parse helper
+  const safeJSONParse = (str: string | null, fallback: any = null) => {
+    if (!str) return fallback;
+    try {
+      return JSON.parse(str);
+    } catch (e) {
+      console.error('Error parsing JSON:', e);
+      return fallback;
     }
-    setSchema(JSON.parse(savedSchema));
-  }, [router]);
+  };
+
+  useEffect(() => {
+    const savedSchema = localStorage.getItem('currentSchema');
+    if (savedSchema) {
+      setSchema(safeJSONParse(savedSchema));
+    }
+  }, []);
 
   // Generate sample values when schema loads or changes
   useEffect(() => {
