@@ -14,47 +14,53 @@ When working with TimeScale DB for time-series data, having realistic environmen
 
 I created a humidity generator that produces realistic values based on typical Earth conditions. Here's what I considered:
 - Average humidity ranges (typically 30-70% for most inhabited areas)
-- Daily variations (higher in the morning, lower in the afternoon)
+- Daily variations (higher in morning, lower in afternoon)
 - Seasonal patterns
 - Geographic influences
 
 Here's how I implemented this in Data Diluvium:
 
 ```typescript
-interface HumidityOptions {
-  minHumidity?: number;  // Default: 30
-  maxHumidity?: number;  // Default: 70
-  includeTimeVariation?: boolean;  // Default: true
-  includeSeasonalVariation?: boolean;  // Default: true
-}
+export const humidityGenerator: GeneratorConfig = {
+  name: 'Humidity',
+  description: 'Generates realistic humidity values with daily and seasonal variations',
+  category: 'number',
+  compatibleTypes: [
+    'NUMBER', 'DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE',
+    'NUMBER(5,2)', 'DECIMAL(5,2)', 'NUMERIC(5,2)'
+  ],
+  defaultOptions: {
+    minHumidity: 30,
+    maxHumidity: 70,
+    includeTimeVariation: true,
+    includeSeasonalVariation: true
+  },
+  generate: async (count: number, options?: GeneratorOptions) => {
+    const finalOptions = { ...humidityGenerator.defaultOptions, ...options };
+    
+    return Array.from({ length: count }, () => {
+      let baseHumidity = finalOptions.minHumidity! + 
+        (Math.random() * (finalOptions.maxHumidity! - finalOptions.minHumidity!));
 
-function generateHumidity(options: HumidityOptions = {}): number {
-  const {
-    minHumidity = 30,
-    maxHumidity = 70,
-    includeTimeVariation = true,
-    includeSeasonalVariation = true
-  } = options;
+      if (finalOptions.includeTimeVariation) {
+        // Add daily variation (higher in morning, lower in afternoon)
+        const hour = new Date().getHours();
+        const timeFactor = Math.sin((hour - 6) * Math.PI / 12); // Peak at 6 AM
+        baseHumidity += timeFactor * 10;
+      }
 
-  let baseHumidity = minHumidity + (Math.random() * (maxHumidity - minHumidity));
+      if (finalOptions.includeSeasonalVariation) {
+        // Add seasonal variation (higher in winter, lower in summer)
+        const month = new Date().getMonth();
+        const seasonalFactor = Math.sin((month - 1) * Math.PI / 6); // Peak in January
+        baseHumidity += seasonalFactor * 5;
+      }
 
-  if (includeTimeVariation) {
-    // Add daily variation (higher in morning, lower in afternoon)
-    const hour = new Date().getHours();
-    const timeFactor = Math.sin((hour - 6) * Math.PI / 12); // Peak at 6 AM
-    baseHumidity += timeFactor * 10;
+      // Ensure the value stays within bounds
+      return Math.max(finalOptions.minHumidity!, Math.min(finalOptions.maxHumidity!, baseHumidity));
+    });
   }
-
-  if (includeSeasonalVariation) {
-    // Add seasonal variation (higher in winter, lower in summer)
-    const month = new Date().getMonth();
-    const seasonalFactor = Math.sin((month - 1) * Math.PI / 6); // Peak in January
-    baseHumidity += seasonalFactor * 5;
-  }
-
-  // Ensure the value stays within bounds
-  return Math.max(minHumidity, Math.min(maxHumidity, baseHumidity));
-}
+};
 ```
 
 ## Using the Generator with TimeScale DB
@@ -83,6 +89,7 @@ I've designed this implementation with several key features that work well with 
 2. **Time-Aware**: The generator considers daily patterns, producing higher values in the morning and lower values in the afternoon.
 3. **Seasonal Awareness**: Values naturally vary with the seasons, higher in winter and lower in summer.
 4. **Flexible Configuration**: I've made it easy to customize the ranges and toggle features as needed.
+5. **Type Compatibility**: The generator supports various numeric SQL types including NUMBER, DECIMAL, NUMERIC, FLOAT, and DOUBLE.
 
 ## Testing the Generator
 

@@ -14,7 +14,8 @@ import {
   passwordGenerator,
   productCodeGenerator,
   booleanGenerator,
-  foreignKeyGenerator
+  foreignKeyGenerator,
+  humidityGenerator
 } from './basic';
 
 export class DataGeneratorRegistry {
@@ -37,6 +38,7 @@ export class DataGeneratorRegistry {
     this.register(productCodeGenerator);
     this.register(booleanGenerator);
     this.register(foreignKeyGenerator);
+    this.register(humidityGenerator);
   }
 
   register(generator: GeneratorConfig): void {

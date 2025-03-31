@@ -294,4 +294,45 @@ export const foreignKeyGenerator: GeneratorConfig = {
       return finalOptions.referencedValues![randomIndex];
     });
   }
+};
+
+export const humidityGenerator: GeneratorConfig = {
+  name: 'Humidity',
+  description: 'Generates realistic humidity values with daily and seasonal variations',
+  category: 'number',
+  compatibleTypes: [
+    'NUMBER', 'DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE',
+    'NUMBER(5,2)', 'DECIMAL(5,2)', 'NUMERIC(5,2)'
+  ],
+  defaultOptions: {
+    minHumidity: 30,
+    maxHumidity: 70,
+    includeTimeVariation: true,
+    includeSeasonalVariation: true
+  },
+  generate: async (count: number, options?: GeneratorOptions) => {
+    const finalOptions = { ...humidityGenerator.defaultOptions, ...options };
+    
+    return Array.from({ length: count }, () => {
+      let baseHumidity = finalOptions.minHumidity! + 
+        (Math.random() * (finalOptions.maxHumidity! - finalOptions.minHumidity!));
+
+      if (finalOptions.includeTimeVariation) {
+        // Add daily variation (higher in morning, lower in afternoon)
+        const hour = new Date().getHours();
+        const timeFactor = Math.sin((hour - 6) * Math.PI / 12); // Peak at 6 AM
+        baseHumidity += timeFactor * 10;
+      }
+
+      if (finalOptions.includeSeasonalVariation) {
+        // Add seasonal variation (higher in winter, lower in summer)
+        const month = new Date().getMonth();
+        const seasonalFactor = Math.sin((month - 1) * Math.PI / 6); // Peak in January
+        baseHumidity += seasonalFactor * 5;
+      }
+
+      // Ensure the value stays within bounds
+      return Math.max(finalOptions.minHumidity!, Math.min(finalOptions.maxHumidity!, baseHumidity));
+    });
+  }
 }; 
