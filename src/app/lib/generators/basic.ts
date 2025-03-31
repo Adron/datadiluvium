@@ -294,4 +294,172 @@ export const foreignKeyGenerator: GeneratorConfig = {
       return finalOptions.referencedValues![randomIndex];
     });
   }
+};
+
+export const humidityGenerator: GeneratorConfig = {
+  name: 'Humidity',
+  description: 'Generates realistic humidity values with daily and seasonal variations',
+  category: 'number',
+  compatibleTypes: [
+    'NUMBER', 'DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE',
+    'NUMBER(5,2)', 'DECIMAL(5,2)', 'NUMERIC(5,2)'
+  ],
+  defaultOptions: {
+    minHumidity: 30,
+    maxHumidity: 70,
+    includeTimeVariation: true,
+    includeSeasonalVariation: true
+  },
+  generate: async (count: number, options?: GeneratorOptions) => {
+    const finalOptions = { ...humidityGenerator.defaultOptions, ...options };
+    
+    return Array.from({ length: count }, () => {
+      let baseHumidity = finalOptions.minHumidity! + 
+        (Math.random() * (finalOptions.maxHumidity! - finalOptions.minHumidity!));
+
+      if (finalOptions.includeTimeVariation) {
+        // Add daily variation (higher in morning, lower in afternoon)
+        const hour = new Date().getHours();
+        const timeFactor = Math.sin((hour - 6) * Math.PI / 12); // Peak at 6 AM
+        baseHumidity += timeFactor * 10;
+      }
+
+      if (finalOptions.includeSeasonalVariation) {
+        // Add seasonal variation (higher in winter, lower in summer)
+        const month = new Date().getMonth();
+        const seasonalFactor = Math.sin((month - 1) * Math.PI / 6); // Peak in January
+        baseHumidity += seasonalFactor * 5;
+      }
+
+      // Ensure the value stays within bounds
+      return Math.max(finalOptions.minHumidity!, Math.min(finalOptions.maxHumidity!, baseHumidity));
+    });
+  }
+};
+
+export const temperatureGenerator: GeneratorConfig = {
+  name: 'Temperature',
+  description: 'Generates realistic temperature values with daily and seasonal variations',
+  category: 'number',
+  compatibleTypes: [
+    'NUMBER', 'DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE',
+    'NUMBER(5,2)', 'DECIMAL(5,2)', 'NUMERIC(5,2)'
+  ],
+  defaultOptions: {
+    minTemperature: -10,
+    maxTemperature: 35,
+    includeTimeVariation: true,
+    includeSeasonalVariation: true,
+    useCelsius: true
+  },
+  generate: async (count: number, options?: GeneratorOptions) => {
+    const finalOptions = { ...temperatureGenerator.defaultOptions, ...options };
+    
+    return Array.from({ length: count }, () => {
+      let baseTemperature = finalOptions.minTemperature! + 
+        (Math.random() * (finalOptions.maxTemperature! - finalOptions.minTemperature!));
+
+      if (finalOptions.includeTimeVariation) {
+        // Add daily variation (warmer in afternoon, cooler at night)
+        const hour = new Date().getHours();
+        const timeFactor = Math.sin((hour - 14) * Math.PI / 12); // Peak at 2 PM
+        baseTemperature += timeFactor * 8; // 8°C daily variation
+      }
+
+      if (finalOptions.includeSeasonalVariation) {
+        // Add seasonal variation (warmer in summer, cooler in winter)
+        const month = new Date().getMonth();
+        const seasonalFactor = Math.sin((month - 6) * Math.PI / 6); // Peak in July
+        baseTemperature += seasonalFactor * 15; // 15°C seasonal variation
+      }
+
+      // Ensure the value stays within bounds
+      baseTemperature = Math.max(finalOptions.minTemperature!, Math.min(finalOptions.maxTemperature!, baseTemperature));
+
+      // Convert to Fahrenheit if needed
+      return finalOptions.useCelsius ? baseTemperature : (baseTemperature * 9/5) + 32;
+    });
+  }
+};
+
+export const celsiusStringGenerator: GeneratorConfig = {
+  name: 'Temperature (Celsius String)',
+  description: 'Generates temperature values as strings with °C suffix',
+  category: 'text',
+  compatibleTypes: [
+    'CHAR', 'VARCHAR', 'VARCHAR2', 'TEXT', 'STRING',
+    'CHARACTER VARYING'
+  ],
+  defaultOptions: {
+    minTemperature: -10,
+    maxTemperature: 35,
+    includeTimeVariation: true,
+    includeSeasonalVariation: true,
+    decimalPlaces: 1
+  },
+  generate: async (count: number, options?: GeneratorOptions) => {
+    const finalOptions = { ...celsiusStringGenerator.defaultOptions, ...options };
+    
+    return Array.from({ length: count }, () => {
+      let baseTemperature = finalOptions.minTemperature! + 
+        (Math.random() * (finalOptions.maxTemperature! - finalOptions.minTemperature!));
+
+      if (finalOptions.includeTimeVariation) {
+        const hour = new Date().getHours();
+        const timeFactor = Math.sin((hour - 14) * Math.PI / 12);
+        baseTemperature += timeFactor * 8;
+      }
+
+      if (finalOptions.includeSeasonalVariation) {
+        const month = new Date().getMonth();
+        const seasonalFactor = Math.sin((month - 6) * Math.PI / 6);
+        baseTemperature += seasonalFactor * 15;
+      }
+
+      baseTemperature = Math.max(finalOptions.minTemperature!, Math.min(finalOptions.maxTemperature!, baseTemperature));
+      
+      return `${baseTemperature.toFixed(finalOptions.decimalPlaces!)}°C`;
+    });
+  }
+};
+
+export const fahrenheitStringGenerator: GeneratorConfig = {
+  name: 'Temperature (Fahrenheit String)',
+  description: 'Generates temperature values as strings with °F suffix',
+  category: 'text',
+  compatibleTypes: [
+    'CHAR', 'VARCHAR', 'VARCHAR2', 'TEXT', 'STRING',
+    'CHARACTER VARYING'
+  ],
+  defaultOptions: {
+    minTemperature: 14, // 57.2°F
+    maxTemperature: 95, // 203°F
+    includeTimeVariation: true,
+    includeSeasonalVariation: true,
+    decimalPlaces: 1
+  },
+  generate: async (count: number, options?: GeneratorOptions) => {
+    const finalOptions = { ...fahrenheitStringGenerator.defaultOptions, ...options };
+    
+    return Array.from({ length: count }, () => {
+      let baseTemperature = finalOptions.minTemperature! + 
+        (Math.random() * (finalOptions.maxTemperature! - finalOptions.minTemperature!));
+
+      if (finalOptions.includeTimeVariation) {
+        const hour = new Date().getHours();
+        const timeFactor = Math.sin((hour - 14) * Math.PI / 12);
+        baseTemperature += timeFactor * 14.4; // 8°C = 14.4°F
+      }
+
+      if (finalOptions.includeSeasonalVariation) {
+        const month = new Date().getMonth();
+        const seasonalFactor = Math.sin((month - 6) * Math.PI / 6);
+        baseTemperature += seasonalFactor * 27; // 15°C = 27°F
+      }
+
+      baseTemperature = Math.max(finalOptions.minTemperature!, Math.min(finalOptions.maxTemperature!, baseTemperature));
+      
+      return `${baseTemperature.toFixed(finalOptions.decimalPlaces!)}°F`;
+    });
+  }
 }; 
