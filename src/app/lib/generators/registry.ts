@@ -15,7 +15,10 @@ import {
   productCodeGenerator,
   booleanGenerator,
   foreignKeyGenerator,
-  humidityGenerator
+  humidityGenerator,
+  temperatureGenerator,
+  celsiusStringGenerator,
+  fahrenheitStringGenerator
 } from './basic';
 
 export class DataGeneratorRegistry {
@@ -39,6 +42,9 @@ export class DataGeneratorRegistry {
     this.register(booleanGenerator);
     this.register(foreignKeyGenerator);
     this.register(humidityGenerator);
+    this.register(temperatureGenerator);
+    this.register(celsiusStringGenerator);
+    this.register(fahrenheitStringGenerator);
   }
 
   register(generator: GeneratorConfig): void {

@@ -48,6 +48,11 @@ export type GeneratorOptions = {
   maxHumidity?: number;
   includeTimeVariation?: boolean;
   includeSeasonalVariation?: boolean;
+
+  // Temperature options
+  minTemperature?: number;
+  maxTemperature?: number;
+  useCelsius?: boolean;
 };
 
 export type GeneratorConfig = {
