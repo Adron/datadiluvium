@@ -35,6 +35,7 @@ export default function GeneratedDataPage() {
   const [currentPage, setCurrentPage] = useState<{ [tableName: string]: number }>({});
   const [generatedData, setGeneratedData] = useState<GeneratedData | null>(null);
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings | null>(null);
+  const [selectedExportFormat, setSelectedExportFormat] = useState<string>('json');
 
   // Safe JSON parse helper
   const safeJSONParse = (str: string | null, fallback: any = null) => {
@@ -140,6 +141,109 @@ export default function GeneratedDataPage() {
     return rows.slice(start, start + rowsPerPage);
   };
 
+  const exportData = () => {
+    if (!generatedData) return;
+
+    Object.entries(generatedData).forEach(([tableName, tableData]) => {
+      let content: string;
+      let extension: string;
+      let mimeType: string;
+
+      switch (selectedExportFormat) {
+        case 'json':
+          content = JSON.stringify(tableData, null, 2);
+          extension = '.json';
+          mimeType = 'application/json';
+          break;
+        case 'json-rich':
+          // Convert rows to array of objects with column names as keys
+          const richData = tableData.rows.map(row => {
+            const obj: { [key: string]: any } = {};
+            tableData.columns.forEach((col, index) => {
+              obj[col] = row[index];
+            });
+            return obj;
+          });
+          content = JSON.stringify(richData, null, 2);
+          extension = '.json';
+          mimeType = 'application/json';
+          break;
+        case 'csv':
+          // Create CSV header
+          const header = tableData.columns.join(',');
+          // Create CSV rows
+          const rows = tableData.rows.map(row => 
+            row.map(cell => {
+              // Escape commas and quotes in cell values
+              const cellStr = String(cell);
+              if (cellStr.includes(',') || cellStr.includes('"')) {
+                return `"${cellStr.replace(/"/g, '""')}"`;
+              }
+              return cellStr;
+            }).join(',')
+          );
+          content = [header, ...rows].join('\n');
+          extension = '.csv';
+          mimeType = 'text/csv';
+          break;
+        case 'xml':
+          // Create XML structure
+          const xmlRows = tableData.rows.map(row => {
+            const rowData = row.map((cell, index) => 
+              `    <${tableData.columns[index]}>${String(cell)}</${tableData.columns[index]}>`
+            ).join('\n');
+            return `  <row>\n${rowData}\n  </row>`;
+          }).join('\n');
+          content = `<?xml version="1.0" encoding="UTF-8"?>\n<${tableName}>\n${xmlRows}\n</${tableName}>`;
+          extension = '.xml';
+          mimeType = 'application/xml';
+          break;
+        case 'txt':
+          // Create plain text format with numbered rows and column-value pairs
+          const textRows = tableData.rows.map((row, index) => {
+            const pairs = row.map((cell, colIndex) => 
+              `${tableData.columns[colIndex]}: ${String(cell)}`
+            );
+            return `${index + 1} - ${pairs.join(', ')}.`;
+          });
+          content = textRows.join('\n');
+          extension = '.txt';
+          mimeType = 'text/plain';
+          break;
+        case 'sql':
+          // Create SQL INSERT statements for each row
+          const sqlStatements = tableData.rows.map(row => {
+            // Format values based on their type
+            const formattedValues = row.map(cell => {
+              if (cell === null) return 'NULL';
+              if (typeof cell === 'number') return cell;
+              // Escape single quotes and wrap strings
+              return `'${String(cell).replace(/'/g, "''")}'`;
+            });
+            
+            return `INSERT INTO ${tableName} (${tableData.columns.join(', ')}) VALUES (${formattedValues.join(', ')});`;
+          });
+          content = sqlStatements.join('\n');
+          extension = '.sql';
+          mimeType = 'application/sql';
+          break;
+        default:
+          return;
+      }
+
+      // Create and trigger download
+      const blob = new Blob([content], { type: mimeType });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${tableName}${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    });
+  };
+
   if (!generatedData) {
     return (
       <>
@@ -176,6 +280,24 @@ export default function GeneratedDataPage() {
                 className="px-4 py-2 text-sm font-medium bg-blue-600 text-white dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 rounded-md transition-colors"
               >
                 Generate Again
+              </button>
+              <select
+                value={selectedExportFormat}
+                onChange={(e) => setSelectedExportFormat(e.target.value)}
+                className="px-4 py-2 text-sm font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors border border-gray-300 dark:border-gray-600"
+              >
+                <option value="json">JSON</option>
+                <option value="csv">CSV</option>
+                <option value="xml">XML</option>
+                <option value="txt">Plain Text</option>
+                <option value="sql">SQL Inserts</option>
+                <option value="json-rich">JSON (rich)</option>
+              </select>
+              <button
+                onClick={exportData}
+                className="px-4 py-2 text-sm font-medium bg-green-600 text-white dark:bg-green-500 hover:bg-green-700 dark:hover:bg-green-600 rounded-md transition-colors"
+              >
+                Export
               </button>
             </div>
 

@@ -42,6 +42,25 @@ export type GeneratorOptions = {
   referencedTable?: string;
   referencedColumn?: string;
   referencedValues?: GeneratedValue[];
+
+  // Humidity options
+  minHumidity?: number;
+  maxHumidity?: number;
+  includeTimeVariation?: boolean;
+  includeSeasonalVariation?: boolean;
+
+  // Temperature options
+  minTemperature?: number;
+  maxTemperature?: number;
+  useCelsius?: boolean;
+
+  // Time Range options
+  windowHours?: number;
+  randomizeStart?: boolean;
+  startTimeRange?: {
+    min: string;
+    max: string;
+  };
 };
 
 export type GeneratorConfig = {
@@ -55,4 +74,6 @@ export type GeneratorConfig = {
 
 export type GeneratorRegistry = {
   [key: string]: GeneratorConfig;
-}; 
+};
+
+export type GeneratorCategory = 'number' | 'id' | 'name' | 'text' | 'date' | 'custom' | 'timestamp';
