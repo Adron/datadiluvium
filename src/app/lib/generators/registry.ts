@@ -18,7 +18,8 @@ import {
   humidityGenerator,
   temperatureGenerator,
   celsiusStringGenerator,
-  fahrenheitStringGenerator
+  fahrenheitStringGenerator,
+  timeRangeGenerator
 } from './basic';
 
 export class DataGeneratorRegistry {
@@ -45,6 +46,7 @@ export class DataGeneratorRegistry {
     this.register(temperatureGenerator);
     this.register(celsiusStringGenerator);
     this.register(fahrenheitStringGenerator);
+    this.register(timeRangeGenerator);
   }
 
   register(generator: GeneratorConfig): void {

@@ -462,4 +462,44 @@ export const fahrenheitStringGenerator: GeneratorConfig = {
       return `${baseTemperature.toFixed(finalOptions.decimalPlaces!)}°F`;
     });
   }
+};
+
+export const timeRangeGenerator: GeneratorConfig = {
+  name: 'Time Range',
+  description: 'Generates evenly spaced timestamps across a 2-hour window',
+  category: 'timestamp',
+  compatibleTypes: [
+    'TIMESTAMP', 'TIMESTAMP WITH TIME ZONE', 'DATETIME',
+    'TIMESTAMP(6)', 'TIMESTAMP(6) WITH TIME ZONE'
+  ],
+  defaultOptions: {
+    windowHours: 2,
+    randomizeStart: true,
+    startTimeRange: {
+      min: '2024-01-01T00:00:00Z',
+      max: '2024-12-31T23:59:59Z'
+    }
+  },
+  generate: async (count: number, options?: GeneratorOptions) => {
+    const finalOptions = { ...timeRangeGenerator.defaultOptions, ...options };
+    
+    // Calculate the time window in milliseconds
+    const windowMs = finalOptions.windowHours! * 60 * 60 * 1000;
+    
+    // Determine the start time
+    let startTime: Date;
+    if (finalOptions.randomizeStart) {
+      const minTime = new Date(finalOptions.startTimeRange!.min!);
+      const maxTime = new Date(finalOptions.startTimeRange!.max!);
+      startTime = new Date(minTime.getTime() + Math.random() * (maxTime.getTime() - minTime.getTime()));
+    } else {
+      startTime = new Date(finalOptions.startTimeRange!.min!);
+    }
+    
+    // Generate evenly spaced timestamps
+    return Array.from({ length: count }, (_, index) => {
+      const timeOffset = (index / (count - 1)) * windowMs;
+      return new Date(startTime.getTime() + timeOffset);
+    });
+  }
 }; 

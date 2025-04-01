@@ -53,6 +53,14 @@ export type GeneratorOptions = {
   minTemperature?: number;
   maxTemperature?: number;
   useCelsius?: boolean;
+
+  // Time Range options
+  windowHours?: number;
+  randomizeStart?: boolean;
+  startTimeRange?: {
+    min: string;
+    max: string;
+  };
 };
 
 export type GeneratorConfig = {
@@ -67,3 +75,5 @@ export type GeneratorConfig = {
 export type GeneratorRegistry = {
   [key: string]: GeneratorConfig;
 };
+
+export type GeneratorCategory = 'number' | 'id' | 'name' | 'text' | 'date' | 'custom' | 'timestamp';
