@@ -1,6 +1,6 @@
 # Adding Time Range Generation to Data Diluvium
 
-Following up on my previous posts about adding humidity and temperature data generation to Data Diluvium, I'm now adding a Time Range generator. This completes the trio of generators I needed for my TimeScale DB setup. While humidity and temperature provide the environmental data, the Time Range generator ensures we have properly spaced time points for our time-series analysis.
+Following up on my previous posts about adding humidity and temperature data generation to Data Diluvium, I'm now adding a Time Range generator. I decided this would be a nice addition to give any graphing of the data a good look. This will complete the trio of generators I needed for my TimeScale DB setup. While humidity and temperature provide the environmental data, the Time Range generator ensures we have properly spaced time points for our time-series analysis.
 
 ## Why Time Range Generation?
 
